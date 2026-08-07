@@ -31,4 +31,4 @@ services:
 networks:
   eventernote-internal:
     external: true
-    name: eventernote-internal
+    name: eventernote-dashboard_eventernote-internal

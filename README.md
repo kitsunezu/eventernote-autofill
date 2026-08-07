@@ -52,13 +52,13 @@ POST /api/internal/events/import
 Authorization: Bearer <shared token>
 ```
 
-Both Compose projects join the externally named `eventernote-internal` Docker network. Set `DASHBOARD_API_URL=http://eventernote-api:8787` inside Docker; do not expose the internal import endpoint through a separate public port.
+The production stack joins the existing `eventernote-dashboard_eventernote-internal` Docker network created by the dashboard Compose project. Set `DASHBOARD_API_URL=http://eventernote-api:8787` inside Docker; do not expose the internal import endpoint through a separate public port.
 
 ## Production deployment
 
 The `main` branch publishes `ghcr.io/kitsunezu/eventernote-autofill:latest` and an immutable `sha-*` tag through GitHub Actions. The workflow runs lint, tests, and the production build before pushing the image.
 
-`docker-compose.yml` is the Portainer stack definition. It exposes host port `3004`, joins the existing `eventernote-internal` network, and reports healthy only when `GET /health` succeeds. Configure the environment values listed in `.env.example` in Portainer; never enter production secrets in Git or the Compose editor.
+`docker-compose.yml` is the Portainer stack definition. It exposes host port `3004`, joins the dashboard's existing internal network, and reports healthy only when `GET /health` succeeds. Configure the environment values listed in `.env.example` in Portainer; never enter production secrets in Git or the Compose editor.
 
 After the stack has been created, configure these repository deployment settings to enable automatic redeploys after future image publications:
 

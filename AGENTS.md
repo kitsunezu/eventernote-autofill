@@ -55,7 +55,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 ## Deployment rules
 
 - Production images are `ghcr.io/kitsunezu/eventernote-autofill:latest` plus immutable `sha-*` tags.
-- Portainer owns runtime secrets and joins the existing external `eventernote-internal` network used by `eventernote-dashboard`.
+- Portainer owns runtime secrets and joins the existing external `eventernote-dashboard_eventernote-internal` network used by the deployed `eventernote-dashboard` stack. Re-check the live network name before changing the dashboard Compose project.
 - Never commit real values for `APP_TOKEN`, `OPENAI_API_KEY`, `EVENTERNOTE_USERNAME`, `EVENTERNOTE_PASSWORD`, `DASHBOARD_IMPORT_TOKEN`, or deployment service tokens.
 - A commit or successful image build is not proof of deployment. Verify the Actions publish job, Portainer stack update/container recreation, and the running container's `/health` response independently.
 - Portainer Git redeploy requests must preserve the stack's existing `Env`; omitting it can clear saved environment variables before Compose interpolation.
