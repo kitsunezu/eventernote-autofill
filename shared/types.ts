@@ -1,4 +1,3 @@
-export type DraftStatus = 'review' | 'ready' | 'submitting' | 'completed' | 'failed'
 export type Confidence = 'high' | 'medium' | 'low' | 'missing'
 export type SourceKind = 'official' | 'ticketing' | 'x' | 'facebook' | 'instagram' | 'eventernote' | 'other'
 export type DescriptionLanguage = 'ja' | 'zh-Hant' | 'zh-Hans' | 'en' | 'ko'
@@ -7,7 +6,7 @@ export type AnalysisStage =
   | 'following_links'
   | 'preparing_images'
   | 'ai_extraction'
-  | 'building_drafts'
+  | 'preparing_review'
   | 'completed'
 
 export interface Evidence {
@@ -23,15 +22,16 @@ export interface EntityCandidate {
   similarity: number
 }
 
-export interface ActorDraft {
+export interface ActorData {
   name: string
+  /** Filled by the server for new performers; never collected from the user. */
   reading: string
   selectedId: string
   createNew: boolean
   candidates: EntityCandidate[]
 }
 
-export interface PlaceDraft {
+export interface PlaceData {
   name: string
   address: string
   countryCode: string
@@ -55,25 +55,26 @@ export interface EventData {
     mimeType: string
     size: number
   }
-  place: PlaceDraft
-  actors: ActorDraft[]
+  place: PlaceData
+  actors: ActorData[]
 }
 
-export interface Draft {
+export interface SubmissionProgress {
+  eventId?: string
+  eventUrl?: string
+  imageAdded?: boolean
+  completed?: boolean
+}
+
+export interface ReviewEvent {
   id: string
   sourceUrl: string
   sourceTitle: string
   sourceKind: SourceKind
-  status: DraftStatus
   data: EventData
   evidence: Partial<Record<string, Evidence>>
   warnings: string[]
-  revision: number
-  createdAt: string
-  updatedAt: string
-  submittedEventId?: string
-  submittedEventUrl?: string
-  imageAdded?: boolean
+  submission?: SubmissionProgress
   error?: string
 }
 
@@ -82,7 +83,6 @@ export interface AppConfig {
   aiConfigured: boolean
   eventernoteConfigured: boolean
   eventernoteWriteEnabled: boolean
-  dashboardConfigured: boolean
 }
 
 export interface AnalyzeRequest {
@@ -90,15 +90,10 @@ export interface AnalyzeRequest {
   analysisId: string
 }
 
-export interface AnalysisProgress {
-  stage: AnalysisStage
-  updatedAt: string
-}
-
 export interface AnalyzeResult {
-  drafts: Draft[]
+  events: ReviewEvent[]
   diagnostics?: {
-    crawlerResult: Pick<Draft, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> & {
+    crawlerResult: Pick<ReviewEvent, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> & {
       finalUrl: string
       fetchWarning?: string
       linkedSources?: string[]
@@ -109,7 +104,28 @@ export interface AnalyzeResult {
   }
 }
 
-export interface ExecuteResult {
-  draft: Draft
+export type AnalysisProgress =
+  | { status: 'running'; stage: AnalysisStage; updatedAt: string }
+  | { status: 'completed'; stage: 'completed'; updatedAt: string; result: AnalyzeResult }
+  | { status: 'failed'; stage: AnalysisStage; updatedAt: string; error: string }
+
+export interface SubmissionImage {
+  fileName: string
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
+  base64: string
+}
+
+export interface SubmissionCheckResult {
+  data: EventData
+  evidence: ReviewEvent['evidence']
+  warnings: string[]
+  ready: boolean
+}
+
+export interface SubmissionResult {
+  data: EventData
+  progress: SubmissionProgress
   steps: Array<{ label: string; status: 'completed' | 'skipped'; url?: string }>
+  completed: boolean
+  error?: string
 }

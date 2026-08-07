@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio'
-import type { Draft, EventData, Evidence } from '../shared/types.js'
+import type { EventData, Evidence, ReviewEvent } from '../shared/types.js'
 import { inferCountry, languageForCountry } from './location.js'
 
 type JsonObject = Record<string, unknown>
@@ -77,6 +77,21 @@ function meta($: cheerio.CheerioAPI, key: string): string {
   return $(`meta[property="${key}"], meta[name="${key}"]`).first().attr('content')?.trim() ?? ''
 }
 
+function contentText($: cheerio.CheerioAPI, selector: string): string {
+  const content = $(selector).first().clone()
+  if (content.length === 0) return ''
+  content.find('br').replaceWith('\n')
+  content.find('p, li, dt, dd, h1, h2, h3, h4, h5, h6, section, article, div').each((_, element) => {
+    $(element).prepend('\n')
+    $(element).append('\n')
+  })
+  return content.text()
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[\t ]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 function evidence(value: string, source: string, confidence: Evidence['confidence']): Evidence {
   return { value, source, confidence: value ? confidence : 'missing' }
 }
@@ -105,7 +120,7 @@ export function extractRelevantPageText(html: string): string {
   return [...new Set([...heading, ...lines])].join('\n').slice(0, 30_000)
 }
 
-export function parseEventPage(html: string, sourceUrl: string): Pick<Draft, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> {
+export function parseEventPage(html: string, sourceUrl: string): Pick<ReviewEvent, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> {
   const $ = cheerio.load(html)
   const jsonObjects: JsonObject[] = []
   $('script[type="application/ld+json"]').each((_, element) => {
@@ -133,7 +148,8 @@ export function parseEventPage(html: string, sourceUrl: string): Pick<Draft, 'so
   const openMatch = visibleText.match(/(?:開場|OPEN)\s*[:：]?\s*(\d{1,2}:\d{2})/i)
   const startMatch = visibleText.match(/(?:開演|START)\s*[:：]?\s*(\d{1,2}:\d{2})/i)
   const title = firstText(event.name, meta($, 'og:title'), $('title').text()).replace(/\s+/g, ' ')
-  const description = firstText(event.description, meta($, 'description'), meta($, 'og:description'))
+  const pageDescription = contentText($, '[data-testid="event-description"]')
+  const description = firstText(pageDescription, event.description, meta($, 'description'), meta($, 'og:description'))
   const image = Array.isArray(event.image) ? text(event.image[0]) : firstText(object(event.image)?.url, event.image, meta($, 'og:image'))
   const address = addressValue
     ? joinedAddress([addressValue.addressRegion, addressValue.addressLocality, addressValue.streetAddress])
@@ -168,13 +184,19 @@ export function parseEventPage(html: string, sourceUrl: string): Pick<Draft, 'so
       candidates: [],
     })),
   }
-  const evidenceMap: Draft['evidence'] = {
+  const evidenceMap: ReviewEvent['evidence'] = {
     title: evidence(title, event.name ? 'JSON-LD: Event.name' : '頁面標題 / Open Graph', event.name ? 'high' : 'medium'),
     date: evidence(data.date, start.date ? 'JSON-LD: Event.startDate' : 'Eventernote 活動詳情', data.date ? 'high' : 'missing'),
     openTime: evidence(data.openTime, '頁面文字: 開場 / OPEN', openMatch ? 'medium' : 'missing'),
     startTime: evidence(data.startTime, start.time ? 'JSON-LD: Event.startDate' : '頁面文字: 開演 / START', data.startTime ? 'high' : 'missing'),
     endTime: evidence(data.endTime, structuredEndTime ? 'JSON-LD: Event.endDate' : 'Eventernote 時間欄', data.endTime ? 'high' : 'missing'),
-    ...(description ? { description: evidence(description, event.description ? 'JSON-LD: Event.description' : 'Meta description', event.description ? 'high' : 'medium') } : {}),
+    ...(description ? { description: evidence(
+      description,
+      pageDescription
+        ? '頁面: [data-testid="event-description"]'
+        : event.description ? 'JSON-LD: Event.description' : 'Meta description',
+      pageDescription || event.description ? 'high' : 'medium',
+    ) } : {}),
     officialUrl: evidence(data.officialUrl, event.url ? 'JSON-LD: Event.url' : '來源網址', event.url ? 'high' : 'medium'),
     imageUrl: evidence(data.imageUrl, event.image ? 'JSON-LD: Event.image' : 'Open Graph image', data.imageUrl ? 'high' : 'missing'),
     'place.name': evidence(data.place.name, location.name ? 'JSON-LD: Event.location.name' : 'Eventernote 場所連結', data.place.name ? 'high' : 'missing'),

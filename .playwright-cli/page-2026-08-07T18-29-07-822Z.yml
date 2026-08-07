@@ -1,0 +1,52 @@
+- main [ref=e267]:
+  - navigation "活動操作" [ref=e268]:
+    - button "解析另一個網址" [ref=e269] [cursor=pointer]
+  - article [ref=e272]:
+    - generic [ref=e274]:
+      - generic [ref=e275]:
+        - generic [ref=e276]: 官方網頁
+        - generic [ref=e277]: AI 已整理
+        - generic "資料標示說明" [ref=e278]
+      - heading "星光音樂祭 2026" [level=2] [ref=e282]
+      - link "查看來源" [ref=e283] [cursor=pointer]:
+        - /url: https://example.com/event
+    - region "AI 整理結果" [ref=e288]:
+      - generic [ref=e289]:
+        - generic [ref=e293]:
+          - heading "資料已由 AI 整理完成" [level=3] [ref=e294]
+          - paragraph [ref=e295]: 你只需快速瀏覽摘要；若內容正確，可直接進入最後確認。
+        - button "手動修改" [ref=e296] [cursor=pointer]
+      - generic [ref=e300]:
+        - generic [ref=e301]:
+          - generic [ref=e302]: 活動
+          - strong [ref=e303]: 星光音樂祭 2026
+        - generic [ref=e304]:
+          - generic [ref=e305]: 日期
+          - strong [ref=e306]: 2026-09-12
+          - generic [ref=e307]: 開場 17:00 · 開始 18:00 · 結束 20:30
+        - generic [ref=e308]:
+          - generic [ref=e309]: 場所
+          - strong [ref=e310]: Zepp New Taipei
+          - generic [ref=e311]: 新北市新莊區新北大道四段3號8樓
+        - generic [ref=e312]:
+          - generic [ref=e313]: 出演者
+          - strong [ref=e314]: 春日樂團、月光少女
+          - generic [ref=e315]: AI 已完成實體核對或將於送出前再檢查
+        - generic [ref=e316]:
+          - generic [ref=e317]: 活動圖片
+          - strong [ref=e318]: 來源未提供
+          - generic [ref=e319]: 圖片不是必填項目
+      - generic "Eventernote 項目決定" [ref=e320]:
+        - heading "Eventernote 項目處理" [level=4] [ref=e321]
+        - generic [ref=e322]:
+          - generic [ref=e323]: Zepp New Taipei
+          - generic [ref=e324]: 使用 Eventernote 現有項目
+        - generic [ref=e325]:
+          - generic [ref=e326]: 春日樂團
+          - generic [ref=e327]: 使用 Eventernote 現有項目
+        - generic [ref=e328]:
+          - generic [ref=e329]: 月光少女
+          - generic [ref=e330]: 建立新項目
+      - group [ref=e331]:
+        - generic "查看活動說明" [ref=e332] [cursor=pointer]
+    - button "預覽並確認" [ref=e334] [cursor=pointer]

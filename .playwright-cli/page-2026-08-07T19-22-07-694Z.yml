@@ -1,0 +1,9 @@
+- main [ref=e7]:
+  - generic [ref=e8]:
+    - heading "Eventernote Autofill" [level=1] [ref=e15]
+    - paragraph [ref=e16]: 輸入伺服器存取密鑰。
+    - generic [ref=e17]:
+      - generic [ref=e18]: 存取密鑰
+      - textbox "存取密鑰" [ref=e19]: SAlDigPkK3HkTr6pmM3t3yUH5cSOG5jUw3l8XK9vxMMSAlDigPkK3HkTr6pmM3t3yUH5cSOG5jUw3l8XK9vxMM
+    - button "登入" [active] [ref=e20] [cursor=pointer]
+    - paragraph [ref=e21]: 存取密鑰不正確

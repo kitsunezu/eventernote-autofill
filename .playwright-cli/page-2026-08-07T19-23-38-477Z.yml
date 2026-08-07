@@ -1,0 +1,57 @@
+- generic [ref=e33]:
+  - main [ref=e34]:
+    - navigation "活動操作" [ref=e35]:
+      - button "解析另一個網址" [ref=e36] [cursor=pointer]
+    - article [ref=e39]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - heading "Example Domain" [level=2] [ref=e42]
+          - link "查看來源" [ref=e43] [cursor=pointer]:
+            - /url: https://example.com/
+        - button "先確認新增項目" [disabled] [ref=e48]
+      - region "AI 整理結果" [ref=e52]:
+        - generic [ref=e53]:
+          - button "活動 Example Domain 點一下修改" [ref=e54] [cursor=pointer]:
+            - generic [ref=e55]: 活動
+            - strong [ref=e56]: Example Domain
+            - generic [ref=e57]: 點一下修改
+          - button "日期 尚未取得 尚未取得時間 點一下修改" [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: 日期
+            - strong [ref=e63]: 尚未取得
+            - generic [ref=e64]: 尚未取得時間
+            - generic [ref=e65]: 點一下修改
+          - button "活動圖片 來源未提供 點一下修改" [active] [ref=e69] [cursor=pointer]:
+            - generic [ref=e70]: 活動圖片
+            - strong [ref=e71]: 來源未提供
+            - generic [ref=e72]: 點一下修改
+        - region [ref=e77]:
+          - generic [ref=e79]:
+            - heading "Eventernote 項目" [level=4] [ref=e80]
+            - paragraph [ref=e81]: 只會採用 Eventernote 項目；點選已匹配項目可重新搜尋。
+          - generic [ref=e82]:
+            - generic [ref=e84]:
+              - strong [ref=e85]: 場所
+              - generic [ref=e86]: 優先搜尋 Eventernote 既有項目
+            - textbox [ref=e91]:
+              - /placeholder: 搜尋 Eventernote 場所
+          - paragraph [ref=e92]: 來源未提供出演者；如有遺漏，可從 Eventernote 搜尋新增。
+          - button "新增出演者" [ref=e93] [cursor=pointer]
+        - generic [ref=e95]:
+          - generic [ref=e96]: 活動說明
+          - textbox "活動說明" [ref=e97]:
+            - /placeholder: 來源未提供說明；若沒有可靠內容，請維持空白。
+        - group [ref=e98]:
+          - generic "AI 留意事項（4）" [ref=e99] [cursor=pointer]
+  - dialog [ref=e100]:
+    - generic [ref=e107]:
+      - heading "修改活動圖片" [level=2] [ref=e108]
+      - paragraph [ref=e109]: 上傳圖片，或貼上可公開存取的圖片連結。
+    - generic [ref=e110]: 圖片預覽
+    - generic [ref=e116]:
+      - generic [ref=e117]: 圖片網址
+      - textbox "圖片網址" [ref=e119]:
+        - /placeholder: https://...
+    - generic [ref=e120]:
+      - button "Choose File" [ref=e121]
+      - button "上傳圖片" [ref=e122] [cursor=pointer]
+    - button "完成" [ref=e127] [cursor=pointer]

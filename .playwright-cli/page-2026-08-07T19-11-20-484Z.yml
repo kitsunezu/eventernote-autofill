@@ -1,0 +1,9 @@
+- main [ref=e3]:
+  - generic [ref=e14]:
+    - heading "活動資料解析" [level=2] [ref=e16]
+    - generic [ref=e22]:
+      - paragraph [ref=e26]: 正在讀取活動來源...
+      - progressbar "解析進度" [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: 解析進度
+          - generic [ref=e30]: 62%

@@ -18,7 +18,7 @@ const processingStages = [
   { key: 'following_links', label: '正在尋找並讀取購票頁...' },
   { key: 'preparing_images', label: '正在準備活動圖片...' },
   { key: 'ai_extraction', label: 'AI 正在辨識頁面與圖片...' },
-  { key: 'building_drafts', label: '正在建立活動草稿...' },
+  { key: 'preparing_review', label: '正在準備核對資料...' },
 ] satisfies Array<{ key: Exclude<AnalysisStage, 'completed'>; label: string }>
 
 const progressRanges: Record<AnalysisStage, { start: number; ceiling: number }> = {
@@ -26,7 +26,7 @@ const progressRanges: Record<AnalysisStage, { start: number; ceiling: number }> 
   following_links: { start: 24, ceiling: 40 },
   preparing_images: { start: 44, ceiling: 56 },
   ai_extraction: { start: 60, ceiling: 84 },
-  building_drafts: { start: 88, ceiling: 97 },
+  preparing_review: { start: 88, ceiling: 97 },
   completed: { start: 100, ceiling: 100 },
 }
 
@@ -157,15 +157,15 @@ const PercentageProgressBar: React.FC<{ progress: number }> = ({ progress }) => 
       aria-valuenow={percentage}
       aria-valuetext={`${percentage}%`}
     >
-      <div className="mb-2 flex items-baseline justify-between gap-4 text-white/70">
+      <div className="mb-2 flex items-baseline justify-between gap-4 text-white/60">
         <span className="text-xs font-medium">解析進度</span>
         <span className="min-w-12 text-right font-mono text-sm font-semibold tabular-nums text-white">
           {percentage}%
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-sm bg-white/15" aria-hidden="true">
+      <div className="h-2.5 overflow-hidden rounded-sm bg-white/10" aria-hidden="true">
         <motion.div
-          className="h-full rounded-sm bg-[#78b4ff] shadow-[0_0_14px_rgba(120,180,255,0.7)]"
+          className="h-full rounded-sm bg-[#8fa6f2] shadow-[0_0_10px_rgba(143,166,242,0.35)]"
           initial={false}
           animate={{ width: `${progress}%` }}
           transition={reducedMotion ? { duration: 0 } : { duration: 0.32, ease: 'easeOut' }}
@@ -197,23 +197,23 @@ export default function ProcessingCard({
   return (
     <section
       className={cn(
-        'w-full overflow-hidden rounded-lg border border-white/10 bg-[#0b0b0f] text-white shadow-2xl',
+        'w-full overflow-hidden rounded-2xl border border-white/8 bg-[#2b2d31]/80 text-white shadow-[0_18px_48px_rgba(0,0,0,0.24)] backdrop-blur-xl',
         className,
       )}
       aria-live="polite"
     >
-      <header className="border-b border-white/10 px-4 py-3">
-        <h2 className="truncate text-sm font-medium text-white">{name}</h2>
+      <header className="border-b border-white/7 bg-white/[0.015] px-4 py-3">
+        <h2 className="truncate text-sm font-medium text-white/90">{name}</h2>
       </header>
 
-      <div className="relative h-[min(400px,52vh)] min-h-72 w-full overflow-hidden bg-black text-white">
-        <div className="absolute inset-0 z-10 opacity-25" aria-hidden="true">
+      <div className="relative h-[min(400px,52vh)] min-h-72 w-full overflow-hidden bg-[#25262a] text-white">
+        <div className="absolute inset-0 z-10 opacity-[0.18]" aria-hidden="true">
           <LetterGlitch />
-          <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(0,0,0,0)_45%,_rgba(0,0,0,0.92)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(35,36,40,0)_45%,_rgba(35,36,40,0.68)_100%)]" />
         </div>
         <div
           className="absolute inset-0"
-          style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(120,180,255,0.15), transparent 70%), #000' }}
+          style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 50%, rgba(114,137,218,0.13), transparent 70%), #25262a' }}
         />
 
         <div className="relative z-20 flex h-full flex-col items-center justify-center px-4">
@@ -232,7 +232,7 @@ export default function ProcessingCard({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
-              className="mb-4 text-center text-sm font-bold text-white drop-shadow-[0_0_6px_rgba(229,231,235,0.2)]"
+              className="mb-4 text-center text-sm font-bold text-white/90"
             >
               {statusText}
             </motion.p>

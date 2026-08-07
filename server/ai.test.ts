@@ -158,6 +158,22 @@ describe('enrichWithAi', () => {
     )).rejects.toThrow('OpenAI 核對失敗 (HTTP 401，invalid_api_key)')
   })
 
+  it('retries one transient network failure', async () => {
+    const result = aiResult()
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ events: [result] }) }] }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(enrichWithAi(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna',
+      'https://example.com/event', 'event page', currentEvent(),
+    )).resolves.toBeDefined()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('returns every separately scheduled session', async () => {
     const day = aiResult()
     day.title = scalar('Sample Live 日場', 'high')
@@ -228,9 +244,9 @@ describe('resolveEventernoteEntities', () => {
     ]
     current.actors.push({ name: 'Brand New Artist', reading: '', selectedId: '', createNew: false, candidates: [] })
     const fetchMock = stubJsonResponse({ decisions: [
-      { key: 'place', action: 'existing', candidateId: '10', confidence: 'medium', reason: 'Name and Tokyo venue context match.' },
-      { key: 'actor:0', action: 'existing', candidateId: '20', confidence: 'high', reason: 'Exact performer identity.' },
-      { key: 'actor:1', action: 'new', candidateId: '', confidence: 'medium', reason: 'No Eventernote candidate represents this artist.' },
+      { key: 'place', action: 'existing', candidateId: '10', reading: '', confidence: 'high', reason: 'Name and Tokyo venue context match.' },
+      { key: 'actor:0', action: 'existing', candidateId: '20', reading: '', confidence: 'high', reason: 'Exact performer identity.' },
+      { key: 'actor:1', action: 'new', candidateId: '', reading: 'ブランド ニュー アーティスト', confidence: 'medium', reason: 'No Eventernote candidate represents this artist.' },
     ] })
 
     const resolved = await resolveEventernoteEntities(
@@ -239,7 +255,7 @@ describe('resolveEventernoteEntities', () => {
 
     expect(resolved.data.place).toMatchObject({ selectedId: '10', createNew: false })
     expect(resolved.data.actors[0]).toMatchObject({ selectedId: '20', createNew: false })
-    expect(resolved.data.actors[1]).toMatchObject({ selectedId: '', createNew: true })
+    expect(resolved.data.actors[1]).toMatchObject({ selectedId: '', createNew: true, reading: 'ブランド ニュー アーティスト' })
     expect(resolved.evidence['place.selection']?.value).toBe('使用現有：Verified Hall')
     expect(resolved.evidence['actors.1.selection']?.value).toBe('建立新出演者：Brand New Artist')
 
@@ -248,6 +264,24 @@ describe('resolveEventernoteEntities', () => {
     const input = JSON.parse(body.input[1].content)
     expect(input.entities).toHaveLength(3)
     expect(input.entities[0].candidates[0].id).toBe('10')
+  })
+
+  it('requires review before using a medium-confidence existing candidate', async () => {
+    const current = currentEvent()
+    current.place.selectedId = ''
+    current.place.candidates = [
+      { id: '10', name: 'Possible Hall', url: 'https://www.eventernote.com/places/example/10', similarity: 0.85 },
+    ]
+    stubJsonResponse({ decisions: [
+      { key: 'place', action: 'existing', candidateId: '10', reading: '', confidence: 'medium', reason: 'Context is similar but identity is not direct.' },
+    ] })
+
+    const resolved = await resolveEventernoteEntities(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna', 'https://example.com/event', current,
+    )
+
+    expect(resolved.data.place).toMatchObject({ selectedId: '', createNew: false })
+    expect(resolved.evidence['place.selection']).toMatchObject({ value: '需確認', confidence: 'missing' })
   })
 
   it('requires review for low-confidence decisions or candidate ids outside the matching entity', async () => {
@@ -259,8 +293,8 @@ describe('resolveEventernoteEntities', () => {
     current.actors[0].selectedId = ''
     current.actors[0].candidates = []
     stubJsonResponse({ decisions: [
-      { key: 'place', action: 'existing', candidateId: '999', confidence: 'high', reason: 'Invalid choice.' },
-      { key: 'actor:0', action: 'new', candidateId: '', confidence: 'low', reason: 'Identity remains uncertain.' },
+      { key: 'place', action: 'existing', candidateId: '999', reading: '', confidence: 'high', reason: 'Invalid choice.' },
+      { key: 'actor:0', action: 'new', candidateId: '', reading: '', confidence: 'low', reason: 'Identity remains uncertain.' },
     ] })
 
     const resolved = await resolveEventernoteEntities(
@@ -271,5 +305,29 @@ describe('resolveEventernoteEntities', () => {
     expect(resolved.data.actors[0]).toMatchObject({ selectedId: '', createNew: false })
     expect(resolved.evidence['place.selection']?.confidence).toBe('missing')
     expect(resolved.evidence['actors.0.selection']?.confidence).toBe('missing')
+  })
+
+  it('preserves an explicit create-new choice and fills its reading', async () => {
+    const current = currentEvent()
+    current.actors[0] = {
+      ...current.actors[0],
+      reading: '',
+      selectedId: '',
+      createNew: true,
+    }
+    const fetchMock = stubJsonResponse({ decisions: [
+      { key: 'actor:0', action: 'new', candidateId: '', reading: 'エグジスティング アーティスト', confidence: 'medium', reason: 'User requested a new performer.' },
+    ] })
+
+    const resolved = await resolveEventernoteEntities(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna', 'https://example.com/event', current,
+    )
+
+    expect(resolved.data.actors[0]).toMatchObject({
+      selectedId: '', createNew: true, reading: 'エグジスティング アーティスト',
+    })
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    const input = JSON.parse(body.input[1].content)
+    expect(input.entities[0]).toMatchObject({ key: 'actor:0', forceCreateNew: true })
   })
 })

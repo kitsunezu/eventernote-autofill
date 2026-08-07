@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ActorDraft, EventData, Evidence } from '../shared/types.js'
+import type { ActorData, EventData, Evidence } from '../shared/types.js'
 import { languageForCountry } from './location.js'
 
 const AiConfidence = z.enum(['high', 'medium', 'low'])
@@ -28,6 +28,7 @@ const EntityDecision = z.object({
   key: z.string(),
   action: z.enum(['existing', 'new', 'review']),
   candidateId: z.string(),
+  reading: z.string().trim().max(200),
   confidence: AiConfidence,
   reason: z.string(),
 })
@@ -41,6 +42,25 @@ type AiScalarResult = z.infer<typeof AiScalar>
 export interface AiImageInput {
   bytes: Uint8Array
   mimeType: string
+}
+
+async function fetchOpenAiResponse(baseUrl: string, apiKey: string, body: unknown): Promise<Response> {
+  const url = new URL('responses', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
+  const encodedBody = JSON.stringify(body)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: encodedBody,
+        signal: AbortSignal.timeout(90_000),
+      })
+    } catch (error) {
+      if (!(error instanceof TypeError) || attempt === 1) throw error
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 250))
+    }
+  }
+  throw new Error('OpenAI request failed')
 }
 
 const scalarJsonSchema = {
@@ -103,10 +123,11 @@ const entityResolutionJsonSchema = {
           key: { type: 'string' },
           action: { type: 'string', enum: ['existing', 'new', 'review'] },
           candidateId: { type: 'string' },
+          reading: { type: 'string', maxLength: 200 },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           reason: { type: 'string' },
         },
-        required: ['key', 'action', 'candidateId', 'confidence', 'reason'],
+        required: ['key', 'action', 'candidateId', 'reading', 'confidence', 'reason'],
         additionalProperties: false,
       },
     },
@@ -168,10 +189,7 @@ export async function extractEventsWithAi(
       detail: 'original',
     })),
   ]
-  const response = await fetch(new URL('responses', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`), {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const response = await fetchOpenAiResponse(baseUrl, apiKey, {
       model,
       store: false,
       reasoning: { effort: 'medium' },
@@ -212,8 +230,6 @@ export async function extractEventsWithAi(
           content: userContent,
         },
       ],
-    }),
-    signal: AbortSignal.timeout(90_000),
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({})) as { error?: { code?: string } }
@@ -275,7 +291,7 @@ export async function extractEventsWithAi(
     const nextNames = actorNames.map(normalizedName)
     if (currentNames.join('\0') !== nextNames.join('\0')) {
       const previousByName = new Map(data.actors.map((actor) => [normalizedName(actor.name), actor]))
-      data.actors = actorNames.map((name): ActorDraft => previousByName.get(normalizedName(name)) ?? {
+      data.actors = actorNames.map((name): ActorData => previousByName.get(normalizedName(name)) ?? {
         name, reading: '', selectedId: '', createNew: false, candidates: [],
       })
       additions.actors = evidence(actorNames.join('、'), current.actors.length ? '核實修正' : '補全')
@@ -330,6 +346,7 @@ export async function resolveEventernoteEntities(
     countryCode: string
     candidates: EventData['place']['candidates']
     actorIndex?: number
+    forceCreateNew?: boolean
   }>
   if (current.place.name && !current.place.selectedId && !current.place.createNew) {
     unresolved.push({
@@ -338,18 +355,16 @@ export async function resolveEventernoteEntities(
     })
   }
   current.actors.forEach((actor, actorIndex) => {
-    if (!actor.name || actor.selectedId || actor.createNew) return
+    if (!actor.name || actor.selectedId) return
     unresolved.push({
       key: `actor:${actorIndex}`, kind: 'actor', name: actor.name, address: '',
       countryCode: current.place.countryCode, candidates: actor.candidates, actorIndex,
+      forceCreateNew: actor.createNew,
     })
   })
   if (!unresolved.length) return { data: structuredClone(current), evidence: {} }
 
-  const response = await fetch(new URL('responses', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`), {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const response = await fetchOpenAiResponse(baseUrl, apiKey, {
       model,
       store: false,
       reasoning: { effort: 'medium' },
@@ -373,9 +388,11 @@ export async function resolveEventernoteEntities(
             'Choose existing only when a candidate represents the same real-world entity, and copy candidateId exactly from that entity candidate list.',
             'Consider aliases, translated names, romanization, Japanese readings, venue addresses and branches, group-versus-member distinctions, and the event country.',
             'Choose new when the named entity is valid but no candidate is the same entity. A similar name alone is not an identity match.',
+            'When an actor has forceCreateNew true, preserve that explicit user choice by returning new even if a possible existing candidate is present.',
             'Choose review only when available evidence genuinely cannot distinguish existing from new. Prefer a supported existing or new decision whenever possible.',
-            'Use high confidence for a direct or corroborated identity match and medium for a strong contextual match. Use low only when material doubt remains.',
+            'Use high confidence only for a direct or corroborated identity match that is safe to select automatically. Return review for any existing-candidate match that is not high confidence.',
             'For new or review, candidateId must be an empty string. Never invent IDs.',
+            'For every new actor, return its pronunciation in reading using Japanese kana suitable for the Eventernote actor reading field. Use web search when needed. For places, existing actors, and review decisions, return an empty reading.',
             'Keep each reason short and factual.',
           ].join(' '),
         },
@@ -401,12 +418,11 @@ export async function resolveEventernoteEntities(
               address: entity.address,
               countryCode: entity.countryCode,
               candidates: entity.candidates,
+              forceCreateNew: entity.forceCreateNew ?? false,
             })),
           }),
         },
       ],
-    }),
-    signal: AbortSignal.timeout(90_000),
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({})) as { error?: { code?: string } }
@@ -432,11 +448,30 @@ export async function resolveEventernoteEntities(
       continue
     }
     const reason = `OpenAI Eventernote 實體判斷（${decision.confidence}）：${decision.reason}`
+    if (entity.kind === 'actor' && entity.forceCreateNew) {
+      const actor = data.actors[entity.actorIndex ?? -1]
+      if (!actor) continue
+      actor.selectedId = ''
+      actor.createNew = true
+      actor.reading = decision.reading.trim()
+      additions[evidenceKey] = actor.reading
+        ? {
+            value: `建立新出演者：${entity.name}`,
+            source: `${reason}；讀音由 OpenAI 補全`.slice(0, 240),
+            confidence: 'low',
+          }
+        : { value: '需確認', source: 'OpenAI 未能補全新出演者讀音', confidence: 'missing' }
+      continue
+    }
     if (decision.action === 'review' || decision.confidence === 'low') {
       markReview(reason)
       continue
     }
     if (decision.action === 'existing') {
+      if (decision.confidence !== 'high') {
+        markReview(reason)
+        continue
+      }
       const candidate = entity.candidates.find((item) => item.id === decision.candidateId)
       if (!candidate) {
         markReview('OpenAI 回傳的候選 ID 不在此項目的 Eventernote 搜尋結果中')
@@ -470,6 +505,12 @@ export async function resolveEventernoteEntities(
       if (!actor) continue
       actor.selectedId = ''
       actor.createNew = true
+      actor.reading = decision.reading.trim()
+      if (!actor.reading) {
+        actor.createNew = false
+        markReview('OpenAI 未能補全新出演者讀音')
+        continue
+      }
     }
     additions[evidenceKey] = {
       value: `建立新${entity.kind === 'place' ? '場所' : '出演者'}：${entity.name}`,

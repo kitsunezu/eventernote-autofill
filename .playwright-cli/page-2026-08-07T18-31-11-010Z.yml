@@ -1,0 +1,9 @@
+- main [ref=f2e3]:
+  - generic [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - heading "Eventernote Autofill" [level=1] [ref=f2e6]
+      - paragraph [ref=f2e7]: 從活動網址，整理成可確認的 Eventernote 資料。
+    - generic [ref=f2e8]:
+      - textbox "活動來源網址" [active] [ref=f2e9]:
+        - /placeholder: 貼上活動網址
+      - button "開始解析" [disabled] [ref=f2e10]

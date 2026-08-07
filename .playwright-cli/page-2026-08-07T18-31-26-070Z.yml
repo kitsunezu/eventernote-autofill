@@ -1,0 +1,44 @@
+- main [ref=f2e14]:
+  - navigation "活動操作" [ref=f2e15]:
+    - button "解析另一個網址" [ref=f2e16] [cursor=pointer]
+  - article [ref=f2e19]:
+    - generic [ref=f2e21]:
+      - generic [ref=f2e22]:
+        - generic [ref=f2e23]: 官方網頁
+        - generic [ref=f2e24]: AI 已整理
+        - generic "資料標示說明" [ref=f2e25]
+      - heading "星光音樂祭 2026" [level=2] [ref=f2e29]
+      - link "查看來源" [ref=f2e30] [cursor=pointer]:
+        - /url: https://example.com/event
+    - region "AI 整理結果" [ref=f2e35]:
+      - generic [ref=f2e36]:
+        - generic [ref=f2e40]:
+          - heading "資料已由 AI 整理完成" [level=3] [ref=f2e41]
+          - paragraph [ref=f2e42]: 你只需快速瀏覽摘要；若內容正確，可直接進入最後確認。
+        - generic [ref=f2e43]:
+          - button "手動修改" [ref=f2e44] [cursor=pointer]
+          - button "預覽並確認" [ref=f2e48] [cursor=pointer]
+      - generic [ref=f2e52]:
+        - generic [ref=f2e53]:
+          - generic [ref=f2e54]: 活動
+          - strong [ref=f2e55]: 星光音樂祭 2026
+        - generic [ref=f2e56]:
+          - generic [ref=f2e57]: 日期
+          - strong [ref=f2e58]: 2026-09-12
+          - generic [ref=f2e59]: 開場 17:00 · 開始 18:00 · 結束 20:30
+        - generic [ref=f2e60]:
+          - generic [ref=f2e61]: 場所
+          - strong [ref=f2e62]: Zepp New Taipei
+          - generic [ref=f2e63]: 新北市新莊區新北大道四段3號8樓
+        - generic [ref=f2e64]:
+          - generic [ref=f2e65]: 出演者
+          - strong [ref=f2e66]: 春日樂團、月光少女
+          - generic [ref=f2e67]: AI 已完成實體核對或將於送出前再檢查
+        - generic [ref=f2e68]:
+          - generic [ref=f2e69]: 活動圖片
+          - strong [ref=f2e70]: 來源未提供
+          - generic [ref=f2e71]: 圖片不是必填項目
+      - group [ref=f2e72]:
+        - generic "查看 Eventernote 項目處理（3）" [ref=f2e73] [cursor=pointer]
+      - group [ref=f2e74]:
+        - generic "查看活動說明" [ref=f2e75] [cursor=pointer]

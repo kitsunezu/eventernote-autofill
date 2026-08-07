@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n web,api \"npm:dev:web\" \"npm:dev:api\"",
     "dev:web": "vite",
-    "dev:api": "tsx watch server/index.ts",
+    "dev:api": "tsx watch --exclude \"data/**\" server/dev.ts",
     "build": "tsc -b && vite build",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",

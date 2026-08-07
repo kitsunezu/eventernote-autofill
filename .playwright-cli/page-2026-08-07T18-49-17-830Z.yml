@@ -1,0 +1,58 @@
+- main [ref=f2e14]:
+  - navigation "活動操作" [ref=f2e15]:
+    - button "解析另一個網址" [ref=f2e16] [cursor=pointer]
+  - article [ref=f2e19]:
+    - generic [ref=f2e21]:
+      - generic [ref=f2e22]:
+        - generic [ref=f2e23]: 官方網頁
+        - generic [ref=f2e24]: AI 已整理
+        - generic "資料標示說明" [ref=f2e25]
+      - heading "星光音樂祭 2026" [level=2] [ref=f2e29]
+      - link "查看來源" [ref=f2e30] [cursor=pointer]:
+        - /url: https://example.com/event
+    - region "AI 整理結果" [ref=f2e35]:
+      - generic [ref=f2e36]:
+        - generic [ref=f2e40]:
+          - heading "資料已由 AI 整理完成" [level=3] [ref=f2e108]
+          - paragraph [ref=f2e42]: 你只需快速瀏覽摘要；若內容正確，可直接進入最後確認。
+        - generic [ref=f2e43]:
+          - button "手動修改" [ref=f2e44] [cursor=pointer]
+          - button "預覽並確認" [ref=f2e109] [cursor=pointer]
+      - generic [ref=f2e52]:
+        - generic [ref=f2e53]:
+          - generic [ref=f2e54]: 活動
+          - strong [ref=f2e55]: 星光音樂祭 2026
+        - generic [ref=f2e56]:
+          - generic [ref=f2e57]: 日期
+          - strong [ref=f2e58]: 2026-09-12
+          - generic [ref=f2e59]: 開場 17:00 · 開始 18:00 · 結束 20:30
+        - generic [ref=f2e60]:
+          - generic [ref=f2e61]: 活動圖片
+          - strong [ref=f2e62]: 來源未提供
+          - generic [ref=f2e63]: 圖片不是必填項目
+      - region [ref=f2e64]:
+        - generic [ref=f2e66]:
+          - heading "Eventernote 項目" [level=4] [ref=f2e67]
+          - paragraph [ref=f2e68]: 只會採用 Eventernote 項目；點選已匹配項目可重新搜尋。
+        - button "場所 Zepp New Taipei 使用現有項目" [ref=f2e69] [cursor=pointer]:
+          - generic [ref=f2e70]:
+            - generic [ref=f2e71]: 場所
+            - strong [ref=f2e72]: Zepp New Taipei
+          - generic [ref=f2e73]: 使用現有項目
+        - button "出演者 1 春日樂團 使用現有項目" [ref=f2e77] [cursor=pointer]:
+          - generic [ref=f2e78]:
+            - generic [ref=f2e79]: 出演者 1
+            - strong [ref=f2e80]: 春日樂團
+          - generic [ref=f2e81]: 使用現有項目
+        - button "出演者 2 月光少女 已確認新增" [ref=f2e110] [cursor=pointer]:
+          - generic [ref=f2e111]:
+            - generic [ref=f2e112]: 出演者 2
+            - strong [ref=f2e113]: 月光少女
+          - generic [ref=f2e114]: 已確認新增
+      - generic [ref=f2e104]:
+        - generic [ref=f2e105]:
+          - text: 活動說明
+          - generic [ref=f2e106]: 直接修改 AI 從來源保留的內容
+        - textbox "活動說明 直接修改 AI 從來源保留的內容" [ref=f2e107]:
+          - /placeholder: 來源未提供說明；若沒有可靠內容，請維持空白。
+          - text: 集結多組人氣出演者的週末現場演出。

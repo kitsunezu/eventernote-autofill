@@ -12,6 +12,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    watch: {
+      ignored: ['**/data/**'],
+    },
     proxy: {
       '/api': 'http://127.0.0.1:8790',
       '/health': 'http://127.0.0.1:8790',

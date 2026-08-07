@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio'
-import type { Draft, EventData } from '../shared/types.js'
+import type { EventData, ReviewEvent } from '../shared/types.js'
 import { classifySource } from './location.js'
 
 const TICKET_LINK_TEXT = /ticket|tickets|ticketing|buy|reserve|reservation|チケット|入場券|前売|予約|申込|申し込み|購票|售票|門票|買票/i
@@ -12,7 +12,7 @@ export interface SourceReferences {
   imageUrls: string[]
 }
 
-type ParsedSource = Pick<Draft, 'sourceTitle' | 'data' | 'evidence' | 'warnings'>
+type ParsedSource = Pick<ReviewEvent, 'sourceTitle' | 'data' | 'evidence' | 'warnings'>
 
 function httpUrl(value: string, baseUrl: string): string {
   const trimmed = value.trim()

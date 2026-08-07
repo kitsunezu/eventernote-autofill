@@ -1,0 +1,125 @@
+- main [ref=f2e14]:
+  - navigation "活動操作" [ref=f2e15]:
+    - button "解析另一個網址" [ref=f2e16] [cursor=pointer]
+  - article [ref=f2e19]:
+    - generic [ref=f2e21]:
+      - generic [ref=f2e22]:
+        - generic [ref=f2e23]: 官方網頁
+        - generic [ref=f2e24]: AI 已整理
+        - generic "資料標示說明" [ref=f2e25]
+      - heading "星光音樂祭 2026" [level=2] [ref=f2e29]
+      - link "查看來源" [ref=f2e30] [cursor=pointer]:
+        - /url: https://example.com/event
+    - generic [ref=f2e146]:
+      - generic [ref=f2e151]:
+        - strong [ref=f2e152]: 手動編輯
+        - generic [ref=f2e153]: 僅修改 AI 無法取得或你確定有誤的內容。
+      - button "返回 AI 摘要" [ref=f2e154] [cursor=pointer]
+    - generic [ref=f2e155]:
+      - heading "活動資料" [level=3] [ref=f2e159]
+      - generic [ref=f2e160]:
+        - generic [ref=f2e161]:
+          - generic [ref=f2e162]:
+            - text: 活動名稱
+            - generic "必填" [ref=f2e163]: "*"
+          - textbox "活動名稱 必填" [ref=f2e165]: 星光音樂祭 2026
+        - generic [ref=f2e166]:
+          - generic [ref=f2e167]:
+            - text: 活動日期
+            - generic "必填" [ref=f2e168]: "*"
+          - textbox "活動日期 必填" [ref=f2e170]: 2026-09-12
+        - generic [ref=f2e171]:
+          - generic [ref=f2e172]: 官方網址
+          - textbox "官方網址" [ref=f2e174]: https://example.com/event
+        - generic [ref=f2e175]:
+          - generic [ref=f2e176]: 開場時間
+          - textbox "開場時間" [ref=f2e178]: 17:00
+        - generic [ref=f2e179]:
+          - generic [ref=f2e180]:
+            - text: 開始時間
+            - generic "必填" [ref=f2e181]: "*"
+          - textbox "開始時間 必填" [ref=f2e183]: 18:00
+        - generic [ref=f2e184]:
+          - generic [ref=f2e185]: 結束時間
+          - textbox "結束時間" [ref=f2e187]: 20:30
+        - generic [ref=f2e188]:
+          - generic [ref=f2e189]: 活動說明
+          - textbox "活動說明" [ref=f2e191]: 集結多組人氣出演者的週末現場演出。
+    - generic [ref=f2e192]:
+      - heading "場所" [level=3] [ref=f2e197]
+      - generic [ref=f2e198]:
+        - generic [ref=f2e199]:
+          - generic [ref=f2e201]:
+            - strong [ref=f2e202]: Eventernote 場所
+            - generic [ref=f2e203]: 優先搜尋 Eventernote 既有項目
+          - textbox [ref=f2e208]:
+            - /placeholder: 搜尋 Eventernote 場所
+            - text: Zepp New Taipei
+          - list "Eventernote 場所搜尋結果" [ref=f2e209]:
+            - listitem [ref=f2e210] [cursor=pointer]:
+              - generic [ref=f2e211]: Zepp New Taipei
+              - generic [ref=f2e212]: 選用既有項目
+          - generic [ref=f2e213]:
+            - generic [ref=f2e214]:
+              - strong [ref=f2e215]: 仍找不到正確項目？
+              - generic [ref=f2e216]: 新增通常不建議，請先確認名稱與搜尋結果。
+            - button "確認新增「Zepp New Taipei」" [ref=f2e217] [cursor=pointer]
+          - button "取消修改" [ref=f2e218] [cursor=pointer]
+        - generic [ref=f2e219]:
+          - generic [ref=f2e220]: 場所地址
+          - textbox "場所地址" [ref=f2e222]: 新北市新莊區新北大道四段3號8樓
+    - generic [ref=f2e223]:
+      - heading "出演者" [level=3] [ref=f2e228]
+      - generic [ref=f2e229]:
+        - generic [ref=f2e230]:
+          - generic [ref=f2e234]:
+            - generic [ref=f2e236]:
+              - strong [ref=f2e237]: Eventernote 出演者 1
+              - generic [ref=f2e238]: 優先搜尋 Eventernote 既有項目
+            - textbox [ref=f2e243]:
+              - /placeholder: 搜尋 Eventernote 出演者
+              - text: 春日樂團
+            - list "Eventernote 出演者 1搜尋結果" [ref=f2e244]:
+              - listitem [ref=f2e245] [cursor=pointer]:
+                - generic [ref=f2e246]: 春日樂團
+                - generic [ref=f2e247]: 選用既有項目
+            - generic [ref=f2e248]:
+              - generic [ref=f2e249]:
+                - strong [ref=f2e250]: 仍找不到正確項目？
+                - generic [ref=f2e251]: 新增通常不建議，請先確認名稱與搜尋結果。
+              - button "確認新增「春日樂團」" [ref=f2e252] [cursor=pointer]
+            - button "取消修改" [ref=f2e253] [cursor=pointer]
+          - button "移除出演者 春日樂團" [ref=f2e254] [cursor=pointer]
+        - generic [ref=f2e258]:
+          - generic [ref=f2e262]:
+            - generic [ref=f2e264]:
+              - strong [ref=f2e265]: Eventernote 出演者 2
+              - generic [ref=f2e266]: 優先搜尋 Eventernote 既有項目
+            - textbox [ref=f2e271]:
+              - /placeholder: 搜尋 Eventernote 出演者
+              - text: Moonlight Girls
+            - list "Eventernote 出演者 2搜尋結果" [ref=f2e272]:
+              - listitem [ref=f2e273] [cursor=pointer]:
+                - generic [ref=f2e274]: Moonlight Girls
+                - generic [ref=f2e275]: 選用既有項目
+            - generic [ref=f2e276]:
+              - generic [ref=f2e277]:
+                - strong [ref=f2e278]: 仍找不到正確項目？
+                - generic [ref=f2e279]: 新增通常不建議，請先確認名稱與搜尋結果。
+              - button "確認新增「Moonlight Girls」" [ref=f2e280] [cursor=pointer]
+            - button "取消修改" [ref=f2e281] [cursor=pointer]
+          - button "移除出演者 Moonlight Girls" [ref=f2e282] [cursor=pointer]
+        - button "新增出演者" [ref=f2e286] [cursor=pointer]
+    - generic [ref=f2e288]:
+      - heading "活動圖片" [level=3] [ref=f2e295]
+      - generic [ref=f2e296]:
+        - generic [ref=f2e297]: 圖片預覽
+        - generic [ref=f2e303]:
+          - generic [ref=f2e304]:
+            - generic [ref=f2e305]: 圖片網址
+            - textbox "圖片網址" [ref=f2e307]:
+              - /placeholder: https://...
+          - generic [ref=f2e308]:
+            - button "Choose File" [ref=f2e309]
+            - button "選擇圖片" [ref=f2e310] [cursor=pointer]
+    - button "預覽並確認" [ref=f2e315] [cursor=pointer]

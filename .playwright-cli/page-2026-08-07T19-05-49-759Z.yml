@@ -1,0 +1,70 @@
+- main [ref=f1e14]:
+  - navigation "活動操作" [ref=f1e15]:
+    - button "解析另一個網址" [ref=f1e16] [cursor=pointer]
+  - article [ref=f1e19]:
+    - generic [ref=f1e21]:
+      - generic [ref=f1e22]:
+        - generic [ref=f1e23]: 官方網頁
+        - generic [ref=f1e24]: 需要補充
+        - generic "資料標示說明" [ref=f1e25]
+      - heading "星光音樂祭 2026" [level=2] [ref=f1e29]
+      - link "查看來源" [ref=f1e30] [cursor=pointer]:
+        - /url: https://example.com/event
+    - region "AI 整理結果" [ref=f1e35]:
+      - generic [ref=f1e36]:
+        - generic [ref=f1e40]:
+          - heading "AI 已先完成整理" [level=3] [ref=f1e41]
+          - paragraph [ref=f1e42]: 送出前會再檢查 Eventernote 候選；只有仍無法判斷時，才需要你補充。
+        - generic [ref=f1e43]:
+          - button "手動修改" [ref=f1e44] [cursor=pointer]
+          - button "預覽並確認" [ref=f1e48] [cursor=pointer]
+      - generic [ref=f1e52]:
+        - generic [ref=f1e53]:
+          - generic [ref=f1e54]: 活動
+          - strong [ref=f1e55]: 星光音樂祭 2026
+        - generic [ref=f1e56]:
+          - generic [ref=f1e57]: 日期
+          - strong [ref=f1e58]: 2026-09-12
+          - generic [ref=f1e59]: 開場 17:00 · 開始 18:00 · 結束 20:30
+        - generic [ref=f1e60]:
+          - generic [ref=f1e61]: 活動圖片
+          - strong [ref=f1e62]: 來源未提供
+          - generic [ref=f1e63]: 圖片不是必填項目
+      - region [ref=f1e64]:
+        - generic [ref=f1e66]:
+          - heading "Eventernote 項目" [level=4] [ref=f1e67]
+          - paragraph [ref=f1e68]: 只會採用 Eventernote 項目；點選已匹配項目可重新搜尋。
+        - button "場所 Zepp New Taipei 使用現有項目" [ref=f1e70] [cursor=pointer]:
+          - generic [ref=f1e71]:
+            - generic [ref=f1e72]: 場所
+            - strong [ref=f1e73]: Zepp New Taipei
+          - generic [ref=f1e74]: 使用現有項目
+        - generic [ref=f1e78]:
+          - generic [ref=f1e125]:
+            - generic [ref=f1e126]:
+              - strong [ref=f1e127]: 出演者 1
+              - generic [ref=f1e128]: 優先搜尋 Eventernote 既有項目
+            - button "移除出演者 月光少女" [ref=f1e130] [cursor=pointer]
+          - textbox [ref=f1e138]:
+            - /placeholder: 搜尋 Eventernote 出演者
+            - text: 月光少女
+          - listbox "出演者 1搜尋結果" [ref=f1e139]:
+            - generic [ref=f1e140]: 搜尋結果
+            - option "Moonlight Girls 使用此項目" [ref=f1e141] [cursor=pointer]:
+              - generic [ref=f1e143]: Moonlight Girls
+              - generic [ref=f1e144]: 使用此項目
+            - option "月光少女隊 使用此項目" [ref=f1e145] [cursor=pointer]:
+              - generic [ref=f1e147]: 月光少女隊
+              - generic [ref=f1e148]: 使用此項目
+          - generic [ref=f1e149]:
+            - generic [ref=f1e150]:
+              - strong [ref=f1e151]: 仍找不到正確項目？
+              - generic [ref=f1e152]: 新增通常不建議，請先確認名稱與搜尋結果。
+            - button "確認新增「月光少女」" [ref=f1e153] [cursor=pointer]
+      - generic [ref=f1e121]:
+        - generic [ref=f1e122]:
+          - text: 活動說明
+          - generic [ref=f1e123]: 直接修改 AI 從來源保留的內容
+        - textbox "活動說明 直接修改 AI 從來源保留的內容" [ref=f1e124]:
+          - /placeholder: 來源未提供說明；若沒有可靠內容，請維持空白。
+          - text: 活動說明

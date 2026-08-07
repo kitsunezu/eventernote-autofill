@@ -75,6 +75,27 @@ describe('parseEventPage', () => {
     expect(parsed.warnings).toContain('找不到活動日期')
   })
 
+  it('prefers the explicit page event description over ticketing metadata', () => {
+    const parsed = parseEventPage(`<html><head>
+      <meta name="description" content="Sample Event のチケット情報ページです。オンラインで簡単にチケットを購入できます。">
+      <script type="application/ld+json">{
+        "@context":"https://schema.org","@type":"Event","name":"Sample Event",
+        "description":"Ticket sales information"
+      }</script></head><body>
+      <section data-testid="event-description">
+        <p>イベント内容の紹介</p>
+        <div><strong>出演者</strong><p>Artist A の紹介</p><p>Artist B の紹介</p></div>
+      </section>
+    </body></html>`, 'https://tickets.example/event')
+
+    expect(parsed.data.description).toBe('イベント内容の紹介\n出演者\nArtist A の紹介\nArtist B の紹介')
+    expect(parsed.evidence.description).toEqual({
+      value: parsed.data.description,
+      source: '頁面: [data-testid="event-description"]',
+      confidence: 'high',
+    })
+  })
+
   it('parses Eventernote detail tables and preserves existing entity ids', () => {
     const html = `<meta property="og:title" content="Detail Event"><body>
       <div class="gb_events_info_table"><table>

@@ -1,6 +1,5 @@
 export interface ServerConfig {
   port: number
-  uploadsDir: string
   appToken?: string
   openAiApiKey?: string
   openAiBaseUrl: string
@@ -9,9 +8,6 @@ export interface ServerConfig {
   eventernoteUsername?: string
   eventernotePassword?: string
   eventernoteWriteEnabled: boolean
-  dashboardUrl?: string
-  dashboardToken?: string
-  dashboardUserId?: string
 }
 
 function positiveInteger(name: string, fallback: number): number {
@@ -42,7 +38,6 @@ function secretValue(name: string, aliasName: string): string | undefined {
 export function loadConfig(): ServerConfig {
   return {
     port: positiveInteger('PORT', 8790),
-    uploadsDir: process.env.UPLOADS_DIR ?? './data/uploads',
     appToken: process.env.APP_TOKEN,
     openAiApiKey: secretValue('OPENAI_API_KEY', 'OPENAI_API_KEY_ENV'),
     openAiBaseUrl: httpsUrl('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
@@ -51,8 +46,5 @@ export function loadConfig(): ServerConfig {
     eventernoteUsername: process.env.EVENTERNOTE_USERNAME,
     eventernotePassword: process.env.EVENTERNOTE_PASSWORD,
     eventernoteWriteEnabled: process.env.EVENTERNOTE_WRITE_ENABLED === 'true',
-    dashboardUrl: process.env.DASHBOARD_API_URL,
-    dashboardToken: process.env.DASHBOARD_IMPORT_TOKEN,
-    dashboardUserId: process.env.DASHBOARD_USER_ID,
   }
 }

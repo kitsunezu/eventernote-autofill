@@ -1,0 +1,41 @@
+- main [ref=e34]:
+  - navigation "活動操作" [ref=e35]:
+    - button "解析另一個網址" [ref=e36] [cursor=pointer]
+  - article [ref=e39]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - generic [ref=e43]: 官方網頁
+        - generic [ref=e44]: 需要補充
+        - generic "資料標示說明" [ref=e45]
+      - heading "未命名活動" [level=2] [ref=e49]
+      - link "查看來源" [ref=e50] [cursor=pointer]:
+        - /url: https://example.com/event
+    - region "AI 整理結果" [ref=e222]:
+      - generic [ref=e223]:
+        - generic [ref=e227]:
+          - heading "AI 已先完成整理" [level=3] [ref=e228]
+          - paragraph [ref=e229]: 送出前會再檢查 Eventernote 候選；只有仍無法判斷時，才需要你補充。
+        - button "手動修改" [ref=e230] [cursor=pointer]
+      - generic [ref=e234]:
+        - generic [ref=e235]:
+          - generic [ref=e236]: 活動
+          - strong [ref=e237]: 尚未取得活動名稱
+        - generic [ref=e238]:
+          - generic [ref=e239]: 日期
+          - strong [ref=e240]: 尚未取得
+          - generic [ref=e241]: 尚未取得時間
+        - generic [ref=e242]:
+          - generic [ref=e243]: 場所
+          - strong [ref=e244]: 尚未取得
+          - generic [ref=e245]: 送出前由 AI 再檢查
+        - generic [ref=e246]:
+          - generic [ref=e247]: 出演者
+          - strong [ref=e248]: 來源未提供
+          - generic [ref=e249]: 不會要求你為空資料新增內容
+        - generic [ref=e250]:
+          - generic [ref=e251]: 活動圖片
+          - strong [ref=e252]: 來源未提供
+          - generic [ref=e253]: 圖片不是必填項目
+      - group [ref=e254]:
+        - generic "AI 留意事項（5）" [ref=e255] [cursor=pointer]
+    - button "預覽並確認" [ref=e90] [cursor=pointer]

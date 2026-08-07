@@ -1,4 +1,7 @@
-import type { AnalysisProgress, AnalyzeResult, AppConfig, Draft, EventData, ExecuteResult } from '../shared/types'
+import type {
+  AnalysisProgress, AnalyzeResult, AppConfig, EntityCandidate, EventData, ReviewEvent, SubmissionImage,
+  SubmissionProgress, SubmissionCheckResult, SubmissionResult,
+} from '../shared/types'
 
 const KEY = 'eventernote-autofill:access-key'
 
@@ -21,6 +24,29 @@ export function setAccessKey(value: string): void {
   else sessionStorage.removeItem(KEY)
 }
 
+export async function waitForAnalysis(
+  getProgress: () => Promise<AnalysisProgress>,
+  onProgress: (progress: AnalysisProgress) => void,
+  pollIntervalMs = 500,
+): Promise<AnalyzeResult> {
+  let consecutiveFailures = 0
+  while (true) {
+    await new Promise((resolve) => globalThis.setTimeout(resolve, pollIntervalMs))
+    let progress: AnalysisProgress
+    try {
+      progress = await getProgress()
+      consecutiveFailures = 0
+    } catch (error) {
+      consecutiveFailures += 1
+      if (consecutiveFailures >= 3) throw error
+      continue
+    }
+    onProgress(progress)
+    if (progress.status === 'completed') return progress.result
+    if (progress.status === 'failed') throw new Error(progress.error)
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const accessKey = getAccessKey()
   const response = await fetch(path, {
@@ -37,35 +63,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload
 }
 
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const accessKey = getAccessKey()
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(accessKey ? { 'Authorization': `Bearer ${accessKey}` } : {}),
+      ...init?.headers,
+    },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+    throw new ApiError(payload.error ?? `HTTP ${response.status}`, response.status)
+  }
+  return response.blob()
+}
+
 export const api = {
   config: () => request<AppConfig>('/api/config'),
   verify: () => request<void>('/api/auth/verify', { method: 'POST' }),
-  listDrafts: () => request<Draft[]>('/api/drafts'),
-  analyze: (url: string, analysisId: string) => request<AnalyzeResult>('/api/drafts/analyze', {
+  startAnalysis: (url: string, analysisId: string) => request<{ analysisId: string }>('/api/analyze', {
     method: 'POST', body: JSON.stringify({ url, analysisId }),
   }),
   analysisProgress: (analysisId: string) => request<AnalysisProgress>(`/api/analyses/${analysisId}/progress`),
-  save: (id: string, data: EventData) => request<Draft>(`/api/drafts/${id}`, {
-    method: 'PUT', body: JSON.stringify(data),
-  }),
-  remove: (id: string) => request<void>(`/api/drafts/${id}`, { method: 'DELETE' }),
-  uploadImage: (id: string, file: File) => request<Draft>(`/api/drafts/${id}/image`, {
-    method: 'POST',
-    headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name) },
-    body: file,
-  }),
-  removeImage: (id: string) => request<Draft>(`/api/drafts/${id}/image`, { method: 'DELETE' }),
-  imageBlob: async (id: string) => {
-    const accessKey = getAccessKey()
-    const response = await fetch(`/api/drafts/${id}/image`, {
-      headers: accessKey ? { 'Authorization': `Bearer ${accessKey}` } : {},
-    })
-    if (!response.ok) throw new Error('無法載入已上傳圖片')
-    return response.blob()
+  searchEntities: (kind: 'place' | 'actor', query: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ kind, query })
+    return request<EntityCandidate[]>(`/api/entities/search?${params}`, { signal })
   },
-  prepare: (id: string) => request<Draft>(`/api/drafts/${id}/prepare`, { method: 'POST' }),
-  confirm: (id: string) => request<{ confirmationToken: string }>(`/api/drafts/${id}/confirm`, { method: 'POST' }),
-  execute: (id: string, confirmationToken: string) => request<ExecuteResult>(`/api/drafts/${id}/execute`, {
-    method: 'POST', body: JSON.stringify({ confirmationToken }),
+  checkSubmission: (sourceUrl: string, data: EventData, evidence: ReviewEvent['evidence']) => request<SubmissionCheckResult>('/api/submission/check', {
+    method: 'POST', body: JSON.stringify({ sourceUrl, data, evidence }),
+  }),
+  imagePreview: (url: string, signal?: AbortSignal) => requestBlob('/api/image-preview', {
+    method: 'POST', body: JSON.stringify({ url }), signal,
+  }),
+  submit: (data: EventData, progress: SubmissionProgress, image?: SubmissionImage) => request<SubmissionResult>('/api/submission', {
+    method: 'POST', body: JSON.stringify({ data, progress, image }),
   }),
 }
