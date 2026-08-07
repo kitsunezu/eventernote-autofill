@@ -47,6 +47,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Prefer existing modules and data types over parallel abstractions.
 - Validate all API inputs with Zod and keep request-size limits explicit.
 - Keep error messages actionable without including credentials, authorization headers, upstream response bodies that may contain private data, or complete Portainer stack payloads.
+- Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
 - Keep user-visible Traditional Chinese text consistent with the existing interface. Keep code, configuration keys, and developer documentation in English.
@@ -58,3 +59,100 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Never commit real values for `APP_TOKEN`, `OPENAI_API_KEY`, `EVENTERNOTE_USERNAME`, `EVENTERNOTE_PASSWORD`, or deployment service tokens.
 - A commit or successful image build is not proof of deployment. Verify the Actions publish job, Portainer stack update/container recreation, and the running container's `/health` response independently.
 - Portainer Git redeploy requests must preserve the stack's existing `Env`; omitting it can clear saved environment variables before Compose interpolation.
+
+## Overview
+
+Summarize the repository purpose and the agent-facing context future contributors should know.
+
+## Project Context
+
+Document core architecture, project purpose, and important implementation context here.
+
+<!-- commit-and-push-with-agents:context:start -->
+### Latest Project Context Signals
+
+- Last scan: `2026-08-08`.
+- Review `server/eventernote.test.ts` for architecture or project-context updates.
+- Review `server/eventernote.ts` for architecture or project-context updates.
+<!-- commit-and-push-with-agents:context:end -->
+## Available Features
+
+Document user-facing or agent-facing features here as they are added or changed.
+
+<!-- commit-and-push-with-agents:features:start -->
+### Latest Feature Signals
+
+- Last scan: `2026-08-08`.
+- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
+- Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
+<!-- commit-and-push-with-agents:features:end -->
+## Common Commands
+
+Document build, test, lint, run, and release commands here.
+
+<!-- commit-and-push-with-agents:commands:start -->
+### Latest Command Signals
+
+- Last scan: `2026-08-08`.
+- No command path signal was detected; verify manually from `git diff`.
+<!-- commit-and-push-with-agents:commands:end -->
+## Dependencies & Development Environment
+
+Document dependency managers, runtime versions, setup steps, and development environment assumptions here.
+
+<!-- commit-and-push-with-agents:environment:start -->
+### Latest Dependency and Environment Signals
+
+- Last scan: `2026-08-08`.
+- Dependency files: no direct path signal detected.
+- Development environment files: no direct path signal detected.
+<!-- commit-and-push-with-agents:environment:end -->
+## Active Agents
+
+No active agents have been documented yet.
+
+<!-- commit-and-push-with-agents:active:start -->
+### Recently Touched Agent Definitions
+
+- Last scan: `2026-08-08`.
+- No explicit agent definitions were inferred from the latest change set.
+<!-- commit-and-push-with-agents:active:end -->
+## Agent Capabilities & Tools
+
+Document agent capabilities, tools, prompts, skills, and workflows here.
+
+<!-- commit-and-push-with-agents:capabilities:start -->
+### Latest Agent-Related Change Signals
+
+- Last scan: `2026-08-08`.
+- No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
+<!-- commit-and-push-with-agents:capabilities:end -->
+## Recent Changes
+
+### 2026-08-08 - Recorded repository changes
+
+- Branch: `main`
+- Affected files: 3 detected before updating `AGENTS.md`.
+- Change types: modified: 3.
+- Agent-related files: none detected by path heuristics.
+- Core impact assessment:
+  - Core Architecture: review/update required (`server/eventernote.test.ts`, `server/eventernote.ts`).
+  - Available Features: review/update required (`server/eventernote.test.ts`, `server/eventernote.ts`).
+  - Common Commands: no direct path signal detected.
+  - Dependencies: no direct path signal detected.
+  - Environment: no direct path signal detected.
+  - Agent System: no direct path signal detected.
+- Files:
+  - `GENTS.md` (modified)
+  - `server/eventernote.test.ts` (modified)
+  - `server/eventernote.ts` (modified)
+## Architecture Notes
+
+Document architecture decisions and integration notes relevant to agents here.
+
+<!-- commit-and-push-with-agents:architecture:start -->
+### Latest Change Footprint
+
+- Last scan: `2026-08-08`.
+- Most affected areas: `server` (2), `GENTS.md` (1).
+<!-- commit-and-push-with-agents:architecture:end -->

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { duplicateSubmissionMessage, EventernoteClient } from './eventernote.js'
 import type { EventData } from '../shared/types.js'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('Eventernote duplicate detection', () => {
   it('returns a useful error with existing event links', () => {
@@ -48,6 +51,110 @@ describe('Eventernote duplicate detection', () => {
       id: '777', url: 'https://www.eventernote.com/events/777',
     })
     expect(fetchMock.mock.calls.some(([input]) => input.toString().includes('/events/search'))).toBe(false)
+  })
+
+  it('posts the Eventernote confirmation form before accepting the created event', async () => {
+    const response = (body: string, url: string, status = 200) => {
+      const result = new Response(body, { status })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email" method="post"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        return response(`
+          <form action="/events/add/confirm" method="post">
+            <input type="hidden" name="authenticity_token" value="initial-token">
+            <input name="event_name"><input name="place_id">
+          </form>
+        `, url)
+      }
+      if (url.endsWith('/events/add/confirm')) {
+        return response(`
+          <form action="/events/add" method="post">
+            <input type="hidden" name="authenticity_token" value="confirmation-token">
+            <input type="hidden" name="event_name" value="Sample Live">
+            <input type="submit" name="commit" value="登録する">
+          </form>
+        `, 'https://www.eventernote.com/events/add/confirm')
+      }
+      if (url.endsWith('/events/add') && init?.method === 'POST') {
+        return response('', 'https://www.eventernote.com/events/779')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Sample Live', date: '2026-08-14', openTime: '', startTime: '19:00', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '10', [])).resolves.toEqual({
+      id: '779', url: 'https://www.eventernote.com/events/779',
+    })
+    const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
+    const confirmationBody = fetchMock.mock.calls[4][1]?.body as URLSearchParams
+    expect(initialBody.get('event_name')).toBe('Sample Live')
+    expect(confirmationBody.get('authenticity_token')).toBe('confirmation-token')
+    expect(confirmationBody.get('commit')).toBe('登録する')
+  })
+
+  it('logs safe structured metadata when the confirmation submission fails', async () => {
+    const response = (body: string, url: string, status = 200) => {
+      const result = new Response(body, { status })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        return response('<form action="/events/add/confirm" method="post"><input name="event_name"></form>', url)
+      }
+      if (url.endsWith('/events/add/confirm')) {
+        return response(`
+          <form action="/events/add" method="post">
+            <input type="hidden" name="authenticity_token" value="secret-confirmation-token">
+            <input type="hidden" name="event_name" value="Private Event Name">
+          </form>
+        `, 'https://www.eventernote.com/events/add/confirm')
+      }
+      return response('<div id="error_explanation">Private Event Name was rejected</div>',
+        'https://www.eventernote.com/events/add/confirm', 422)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'private-user', 'private-password')
+    const data = {
+      title: 'Private Event Name', date: '2026-08-14', openTime: '', startTime: '19:00', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '10', [])).rejects.toThrow('Eventernote 拒絕提交')
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    const logged = String(logSpy.mock.calls[0][0])
+    expect(JSON.parse(logged)).toEqual({
+      event: 'eventernote_submission_failed',
+      entity: 'events',
+      stage: 'confirmation_response',
+      httpStatus: 422,
+      pathname: '/events/add/confirm',
+      errorType: 'Error',
+    })
+    expect(logged).not.toContain('Private Event Name')
+    expect(logged).not.toContain('secret-confirmation-token')
+    expect(logged).not.toContain('private-user')
+    expect(logged).not.toContain('private-password')
   })
 
   it('reports when email verification blocks access to the add form', async () => {

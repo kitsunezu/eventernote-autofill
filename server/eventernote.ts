@@ -12,6 +12,14 @@ interface PostCreateForm {
   pageUrl: string
 }
 
+type SubmissionStage = 'login' | 'open_form' | 'initial_post' | 'initial_response' | 'confirmation_post' | 'confirmation_response'
+
+interface SubmissionLogContext {
+  entity: 'actors' | 'places' | 'events'
+  stage: SubmissionStage
+  response?: Response
+}
+
 function normalize(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/[\s・･\-_.,，。()（）「」『』]/g, '')
 }
@@ -31,6 +39,37 @@ function similarity(left: string, right: string): number {
 
 function idFromPath(path: string): string {
   return path.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const direct = 'code' in error ? error.code : undefined
+  const cause = 'cause' in error && error.cause && typeof error.cause === 'object' && 'code' in error.cause
+    ? error.cause.code
+    : undefined
+  const code = typeof direct === 'string' ? direct : typeof cause === 'string' ? cause : undefined
+  return code?.slice(0, 80)
+}
+
+function safePathname(response?: Response): string | undefined {
+  if (!response?.url) return undefined
+  try {
+    return new URL(response.url).pathname
+  } catch {
+    return undefined
+  }
+}
+
+function logSubmissionFailure(context: SubmissionLogContext, error: unknown): void {
+  console.error(JSON.stringify({
+    event: 'eventernote_submission_failed',
+    entity: context.entity,
+    stage: context.stage,
+    ...(context.response ? { httpStatus: context.response.status } : {}),
+    ...(safePathname(context.response) ? { pathname: safePathname(context.response) } : {}),
+    errorType: error instanceof Error ? error.name : 'UnknownError',
+    ...(errorCode(error) ? { errorCode: errorCode(error) } : {}),
+  }))
 }
 
 async function fetchEventernoteRead(input: string | URL, init: RequestInit): Promise<Response> {
@@ -234,6 +273,62 @@ export class EventernoteClient {
     return true
   }
 
+  private submissionForm(
+    $: cheerio.CheerioAPI,
+    pageUrl: string,
+    entityPath: 'actors' | 'places' | 'events',
+  ): cheerio.Cheerio<AnyNode> {
+    const forms = $('form').filter((_, item) => {
+      const form = $(item)
+      const action = form.attr('action') ?? ''
+      const submitsToEntityPath = action
+        ? action.includes(`/${entityPath}`)
+        : new URL(pageUrl).pathname.includes(`/${entityPath}/add`)
+      return submitsToEntityPath && !action.includes('/search') && !action.includes('/login')
+    }).toArray()
+    forms.sort((left, right) => {
+      const namedFields = (item: AnyNode) => $(item).find('input[name], select[name], textarea[name]').length
+      return namedFields(right) - namedFields(left)
+    })
+    return $(forms[0])
+  }
+
+  private formAction(form: cheerio.Cheerio<AnyNode>, pageUrl: string): URL {
+    const action = new URL(form.attr('action') || pageUrl, pageUrl)
+    if (action.origin !== new URL(this.origin).origin) {
+      throw new Error('Eventernote 表單提交目的地不安全')
+    }
+    return action
+  }
+
+  private async postForm(
+    form: cheerio.Cheerio<AnyNode>,
+    pageUrl: string,
+    body: URLSearchParams,
+  ): Promise<Response> {
+    return this.fetchWithCookies(this.formAction(form, pageUrl), {
+      method: (form.attr('method') ?? 'post').toUpperCase(),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': pageUrl },
+      body,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(25_000),
+    })
+  }
+
+  private submissionError(
+    html: string,
+    entityPath: 'actors' | 'places' | 'events',
+  ): Error {
+    const result = cheerio.load(html)
+    const errors = result('.error, .errors, .alert-danger, .field_with_errors, #error_explanation')
+      .text().replace(/\s+/g, ' ').trim()
+    const duplicateMessage = entityPath === 'events'
+      ? duplicateSubmissionMessage(html, this.origin, errors)
+      : undefined
+    if (duplicateMessage) return new Error(duplicateMessage)
+    return new Error(errors ? `Eventernote 拒絕提交：${errors.slice(0, 300)}` : `Eventernote ${entityPath} 提交未成功`)
+  }
+
   private async findImageForm(eventId: string): Promise<PostCreateForm> {
     await this.login()
     const detailUrl = new URL(`/events/${eventId}`, this.origin)
@@ -290,51 +385,59 @@ export class EventernoteClient {
     configure: ($: cheerio.CheerioAPI, form: cheerio.Cheerio<AnyNode>, body: URLSearchParams) => void,
     entityPath: 'actors' | 'places' | 'events',
   ): Promise<SubmittedEntity> {
-    await this.login()
-    const page = await this.fetchWithCookies(new URL(path, this.origin), { signal: AbortSignal.timeout(15_000) })
-    if (page.url.includes('/login')) throw new Error('Eventernote session 已失效')
-    const pageHtml = await page.text()
-    if (!page.ok) {
-      const pageText = cheerio.load(pageHtml)('body').text().replace(/\s+/g, ' ').trim()
-      if (/メール認証が必要/.test(pageText)) {
-        throw new Error('Eventernote 帳號尚未完成電子郵件驗證；請先登入 Eventernote 完成信箱驗證，再重新上傳')
+    let stage: SubmissionStage = 'login'
+    let lastResponse: Response | undefined
+    try {
+      await this.login()
+      stage = 'open_form'
+      const page = await this.fetchWithCookies(new URL(path, this.origin), { signal: AbortSignal.timeout(15_000) })
+      lastResponse = page
+      if (page.url.includes('/login')) throw new Error('Eventernote session 已失效')
+      const pageHtml = await page.text()
+      if (!page.ok) {
+        const pageText = cheerio.load(pageHtml)('body').text().replace(/\s+/g, ' ').trim()
+        if (/メール認証が必要/.test(pageText)) {
+          throw new Error('Eventernote 帳號尚未完成電子郵件驗證；請先登入 Eventernote 完成信箱驗證，再重新上傳')
+        }
+        throw new Error(
+          `Eventernote 拒絕開啟 ${entityPath} 新增表單 (HTTP ${page.status})；請確認該帳號可在 Eventernote 網站新增資料，並檢查伺服器連線是否遭限制`,
+        )
       }
-      throw new Error(
-        `Eventernote 拒絕開啟 ${entityPath} 新增表單 (HTTP ${page.status})；請確認該帳號可在 Eventernote 網站新增資料，並檢查伺服器連線是否遭限制`,
-      )
+      const $ = cheerio.load(pageHtml)
+      if ($('form[action*="/login/email"]').length) throw new Error('Eventernote session 已失效')
+      const form = this.submissionForm($, page.url, entityPath)
+      if (!form.length) throw new Error(`無法辨識 Eventernote ${entityPath} 新增表單`)
+      const body = this.collectDefaults($, form)
+      configure($, form, body)
+
+      stage = 'initial_post'
+      let response = await this.postForm(form, page.url, body)
+      lastResponse = response
+      stage = 'initial_response'
+      let html = await response.text()
+      let id = idFromPath(new URL(response.url).pathname)
+      if (response.ok && id && !response.url.includes('/add')) return { id, url: response.url }
+
+      const responsePath = new URL(response.url).pathname
+      const isConfirmationPage = response.ok && /\/add\/confirm\/?$/.test(responsePath)
+      if (!isConfirmationPage) throw this.submissionError(html, entityPath)
+
+      const confirmationPage = cheerio.load(html)
+      const confirmationForm = this.submissionForm(confirmationPage, response.url, entityPath)
+      if (!confirmationForm.length) throw new Error(`無法辨識 Eventernote ${entityPath} 確認表單`)
+      const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
+      stage = 'confirmation_post'
+      response = await this.postForm(confirmationForm, response.url, confirmationBody)
+      lastResponse = response
+      stage = 'confirmation_response'
+      html = await response.text()
+      id = idFromPath(new URL(response.url).pathname)
+      if (!response.ok || !id || response.url.includes('/add')) throw this.submissionError(html, entityPath)
+      return { id, url: response.url }
+    } catch (error) {
+      logSubmissionFailure({ entity: entityPath, stage, response: lastResponse }, error)
+      throw error
     }
-    const $ = cheerio.load(pageHtml)
-    if ($('form[action*="/login/email"]').length) throw new Error('Eventernote session 已失效')
-    const form = $('form').filter((_, item) => {
-      const action = $(item).attr('action') ?? ''
-      const submitsToEntityPath = action
-        ? action.includes(`/${entityPath}`)
-        : new URL(page.url).pathname.includes(`/${entityPath}/add`)
-      return submitsToEntityPath && !action.includes('/search')
-    }).first()
-    if (!form.length) throw new Error(`無法辨識 Eventernote ${entityPath} 新增表單`)
-    const body = this.collectDefaults($, form)
-    configure($, form, body)
-    const action = new URL(form.attr('action') ?? path, this.origin)
-    const response = await this.fetchWithCookies(action, {
-      method: (form.attr('method') ?? 'post').toUpperCase(),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': page.url },
-      body,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(25_000),
-    })
-    const html = await response.text()
-    const result = cheerio.load(html)
-    const errors = result('.error, .errors, .alert-danger, .field_with_errors').text().replace(/\s+/g, ' ').trim()
-    const id = idFromPath(new URL(response.url).pathname)
-    if (!response.ok || !id || response.url.includes('/add')) {
-      const duplicateMessage = entityPath === 'events'
-        ? duplicateSubmissionMessage(html, this.origin, errors)
-        : undefined
-      if (duplicateMessage) throw new Error(duplicateMessage)
-      throw new Error(errors ? `Eventernote 拒絕提交：${errors.slice(0, 300)}` : `Eventernote ${entityPath} 提交未成功`)
-    }
-    return { id, url: response.url }
   }
 
   createActor(actor: ActorData): Promise<SubmittedEntity> {
