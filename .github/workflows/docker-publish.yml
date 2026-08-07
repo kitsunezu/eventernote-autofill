@@ -1,0 +1,145 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build application
+        run: npm run build
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check Portainer deployment settings
+        id: portainer
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          PORTAINER_BASE_URL: ${{ vars.PORTAINER_BASE_URL }}
+          PORTAINER_STACK_ID: ${{ vars.PORTAINER_STACK_ID }}
+          PORTAINER_ENDPOINT_ID: ${{ vars.PORTAINER_ENDPOINT_ID }}
+        run: |
+          if [ -n "$CF_ACCESS_CLIENT_ID" ] && [ -n "$CF_ACCESS_CLIENT_SECRET" ] \
+            && [ -n "$PORTAINER_API_KEY" ] && [ -n "$PORTAINER_BASE_URL" ] \
+            && [ -n "$PORTAINER_STACK_ID" ] && [ -n "$PORTAINER_ENDPOINT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Portainer redeploy skipped because deployment settings are incomplete"
+          fi
+
+      - name: Trigger Portainer redeploy
+        if: steps.portainer.outputs.configured == 'true'
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          PORTAINER_BASE_URL: ${{ vars.PORTAINER_BASE_URL }}
+          PORTAINER_STACK_ID: ${{ vars.PORTAINER_STACK_ID }}
+          PORTAINER_ENDPOINT_ID: ${{ vars.PORTAINER_ENDPOINT_ID }}
+        run: |
+          redeploy_dir="$(mktemp -d)"
+          trap 'rm -rf "$redeploy_dir"' EXIT
+          stack_file="$redeploy_dir/stack.json"
+          payload_file="$redeploy_dir/redeploy.json"
+          response_file="$redeploy_dir/response.json"
+
+          curl --fail-with-body --silent --show-error \
+            --header "CF-Access-Client-ID: $CF_ACCESS_CLIENT_ID" \
+            --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+            --header "X-API-Key: $PORTAINER_API_KEY" \
+            --output "$stack_file" \
+            "$PORTAINER_BASE_URL/api/stacks/$PORTAINER_STACK_ID"
+
+          if ! jq -e '(.Env // []) | any(.name == "APP_TOKEN" and ((.value // "") | length > 0))' "$stack_file" >/dev/null; then
+            echo "::error::APP_TOKEN is not configured in Portainer stack $PORTAINER_STACK_ID"
+            exit 1
+          fi
+
+          jq '{
+            RepositoryReferenceName: (.GitConfig.ReferenceName // ""),
+            RepositoryAuthentication: (.GitConfig.Authentication != null),
+            RepositoryUsername: (.GitConfig.Authentication.Username // ""),
+            RepositoryAuthorizationType: (.GitConfig.Authentication.AuthorizationType // 0),
+            Env: (.Env // []),
+            Prune: (.Option.Prune // false),
+            RepullImageAndRedeploy: true
+          }' "$stack_file" > "$payload_file"
+
+          http_status="$(curl --silent --show-error \
+            --request PUT \
+            --header "CF-Access-Client-ID: $CF_ACCESS_CLIENT_ID" \
+            --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+            --header "X-API-Key: $PORTAINER_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data-binary "@$payload_file" \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            "$PORTAINER_BASE_URL/api/stacks/$PORTAINER_STACK_ID/git/redeploy?endpointId=$PORTAINER_ENDPOINT_ID")"
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            error_message="$(jq -r '.message // "Portainer redeploy failed"' "$response_file" 2>/dev/null || true)"
+            echo "::error::Portainer redeploy failed (HTTP $http_status): $error_message"
+            exit 1
+          fi
+
+          echo "Portainer redeploy completed (HTTP $http_status)"
