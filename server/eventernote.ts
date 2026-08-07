@@ -41,6 +41,10 @@ function idFromPath(path: string): string {
   return path.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
 }
 
+function integerFormValue(value: string): string {
+  return /^\d+$/.test(value) ? String(Number.parseInt(value, 10)) : value
+}
+
 function errorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined
   const direct = 'code' in error ? error.code : undefined
@@ -471,12 +475,12 @@ export class EventernoteClient {
       this.assignNamed(body, /official.*url|source.*url|url/, data.officialUrl)
       this.assignByContext($, form, body, [/備考|説明|description|note/i], data.description)
       const [year, month, day] = data.date.split('-')
-      this.assignNamed(body, /start.*year|year.*start|\[year\]/, year)
-      this.assignNamed(body, /start.*month|month.*start|\[month\]/, month)
-      this.assignNamed(body, /start.*day|day.*start|\[day\]/, day)
+      this.assignNamed(body, /start.*year|year.*start|\[year\]/, integerFormValue(year))
+      this.assignNamed(body, /start.*month|month.*start|\[month\]/, integerFormValue(month))
+      this.assignNamed(body, /start.*day|day.*start|\[day\]/, integerFormValue(day))
       const [hour, minute] = data.startTime.split(':')
-      this.assignNamed(body, /start.*hour|hour.*start/, hour)
-      this.assignNamed(body, /start.*min|minute.*start/, minute)
+      this.assignNamed(body, /start.*hour|hour.*start/, integerFormValue(hour))
+      this.assignNamed(body, /start.*min|minute.*start/, integerFormValue(minute))
       const actorKey = [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
       if (actorKey && actorIds.length) {
         body.delete(actorKey)

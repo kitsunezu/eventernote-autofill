@@ -70,6 +70,11 @@ describe('Eventernote duplicate detection', () => {
           <form action="/events/add/confirm" method="post">
             <input type="hidden" name="authenticity_token" value="initial-token">
             <input name="event_name"><input name="place_id">
+            <select name="date[year]"><option value="2026">2026</option></select>
+            <select name="date[month]"><option value="8">8</option></select>
+            <select name="date[day]"><option value="8">8</option></select>
+            <select name="start_time[hour]"><option value="9">09</option></select>
+            <select name="start_time[minute]"><option value="5">05</option></select>
           </form>
         `, url)
       }
@@ -90,7 +95,7 @@ describe('Eventernote duplicate detection', () => {
     vi.stubGlobal('fetch', fetchMock)
     const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
     const data = {
-      title: 'Sample Live', date: '2026-08-14', openTime: '', startTime: '19:00', endTime: '',
+      title: 'Sample Live', date: '2026-09-08', openTime: '', startTime: '09:05', endTime: '',
       description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
       place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
     } satisfies EventData
@@ -101,6 +106,10 @@ describe('Eventernote duplicate detection', () => {
     const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
     const confirmationBody = fetchMock.mock.calls[4][1]?.body as URLSearchParams
     expect(initialBody.get('event_name')).toBe('Sample Live')
+    expect(initialBody.get('date[month]')).toBe('9')
+    expect(initialBody.get('date[day]')).toBe('8')
+    expect(initialBody.get('start_time[hour]')).toBe('9')
+    expect(initialBody.get('start_time[minute]')).toBe('5')
     expect(confirmationBody.get('authenticity_token')).toBe('confirmation-token')
     expect(confirmationBody.get('commit')).toBe('登録する')
   })
