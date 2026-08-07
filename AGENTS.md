@@ -48,6 +48,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Validate all API inputs with Zod and keep request-size limits explicit.
 - Keep error messages actionable without including credentials, authorization headers, upstream response bodies that may contain private data, or complete Portainer stack payloads.
 - Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
+- Send Eventernote date parts as decimal integers, preserve two-digit time parts, and normalize flattened confirmation-page times to `HH:MM` before the final POST.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
 - Keep user-visible Traditional Chinese text consistent with the existing interface. Keep code, configuration keys, and developer documentation in English.
@@ -72,6 +73,7 @@ Document core architecture, project purpose, and important implementation contex
 ### Latest Project Context Signals
 
 - Last scan: `2026-08-08`.
+- Review `server/eventernote.test.ts` for architecture or project-context updates.
 - Review `server/eventernote.ts` for architecture or project-context updates.
 <!-- commit-and-push-with-agents:context:end -->
 ## Available Features
@@ -82,6 +84,7 @@ Document user-facing or agent-facing features here as they are added or changed.
 ### Latest Feature Signals
 
 - Last scan: `2026-08-08`.
+- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
 - Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
 <!-- commit-and-push-with-agents:features:end -->
 ## Common Commands
@@ -169,5 +172,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-08-08`.
-- Most affected areas: `erver` (1), `server` (1).
+- Most affected areas: `server` (2), `GENTS.md` (1).
 <!-- commit-and-push-with-agents:architecture:end -->

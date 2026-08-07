@@ -45,6 +45,11 @@ function integerFormValue(value: string): string {
   return /^\d+$/.test(value) ? String(Number.parseInt(value, 10)) : value
 }
 
+function timeFormValue(hour: string, minute: string): string {
+  if (!/^\d{1,2}$/.test(hour) || !/^\d{1,2}$/.test(minute)) return ''
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
+}
+
 function errorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined
   const direct = 'code' in error ? error.code : undefined
@@ -277,6 +282,22 @@ export class EventernoteClient {
     return true
   }
 
+  private assignTimeParts(body: URLSearchParams, prefix: 'open_time' | 'start_time' | 'end_time', value: string): void {
+    if (!value) return
+    const [hour, minute] = value.split(':')
+    if (body.has(`${prefix}[hour]`)) body.set(`${prefix}[hour]`, hour)
+    if (body.has(`${prefix}[minute]`)) body.set(`${prefix}[minute]`, minute)
+  }
+
+  private normalizeConfirmationTimes(confirmationBody: URLSearchParams, initialBody: URLSearchParams): void {
+    for (const prefix of ['open_time', 'start_time', 'end_time'] as const) {
+      if (!confirmationBody.has(prefix)) continue
+      const hour = initialBody.get(`${prefix}[hour]`) ?? ''
+      const minute = initialBody.get(`${prefix}[minute]`) ?? ''
+      confirmationBody.set(prefix, hour || minute ? timeFormValue(hour, minute) : '')
+    }
+  }
+
   private submissionForm(
     $: cheerio.CheerioAPI,
     pageUrl: string,
@@ -430,6 +451,7 @@ export class EventernoteClient {
       const confirmationForm = this.submissionForm(confirmationPage, response.url, entityPath)
       if (!confirmationForm.length) throw new Error(`無法辨識 Eventernote ${entityPath} 確認表單`)
       const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
+      this.normalizeConfirmationTimes(confirmationBody, body)
       stage = 'confirmation_post'
       response = await this.postForm(confirmationForm, response.url, confirmationBody)
       lastResponse = response
@@ -478,9 +500,9 @@ export class EventernoteClient {
       this.assignNamed(body, /start.*year|year.*start|\[year\]/, integerFormValue(year))
       this.assignNamed(body, /start.*month|month.*start|\[month\]/, integerFormValue(month))
       this.assignNamed(body, /start.*day|day.*start|\[day\]/, integerFormValue(day))
-      const [hour, minute] = data.startTime.split(':')
-      this.assignNamed(body, /start.*hour|hour.*start/, integerFormValue(hour))
-      this.assignNamed(body, /start.*min|minute.*start/, integerFormValue(minute))
+      this.assignTimeParts(body, 'open_time', data.openTime)
+      this.assignTimeParts(body, 'start_time', data.startTime)
+      this.assignTimeParts(body, 'end_time', data.endTime)
       const actorKey = [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
       if (actorKey && actorIds.length) {
         body.delete(actorKey)

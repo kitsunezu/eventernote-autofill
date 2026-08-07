@@ -73,8 +73,12 @@ describe('Eventernote duplicate detection', () => {
             <select name="date[year]"><option value="2026">2026</option></select>
             <select name="date[month]"><option value="8">8</option></select>
             <select name="date[day]"><option value="8">8</option></select>
-            <select name="start_time[hour]"><option value="9">09</option></select>
-            <select name="start_time[minute]"><option value="5">05</option></select>
+            <select name="open_time[hour]"><option value=""></option></select>
+            <select name="open_time[minute]"><option value=""></option></select>
+            <select name="start_time[hour]"><option value=""></option></select>
+            <select name="start_time[minute]"><option value=""></option></select>
+            <select name="end_time[hour]"><option value=""></option></select>
+            <select name="end_time[minute]"><option value=""></option></select>
           </form>
         `, url)
       }
@@ -83,6 +87,9 @@ describe('Eventernote duplicate detection', () => {
           <form action="/events/add" method="post">
             <input type="hidden" name="authenticity_token" value="confirmation-token">
             <input type="hidden" name="event_name" value="Sample Live">
+            <input type="hidden" name="open_time" value="--- hour: 8 minute: 30 ">
+            <input type="hidden" name="start_time" value="--- hour: 9 minute: 5 ">
+            <input type="hidden" name="end_time" value="--- hour: 3 minute: 0 ">
             <input type="submit" name="commit" value="登録する">
           </form>
         `, 'https://www.eventernote.com/events/add/confirm')
@@ -95,7 +102,7 @@ describe('Eventernote duplicate detection', () => {
     vi.stubGlobal('fetch', fetchMock)
     const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
     const data = {
-      title: 'Sample Live', date: '2026-09-08', openTime: '', startTime: '09:05', endTime: '',
+      title: 'Sample Live', date: '2026-09-08', openTime: '08:30', startTime: '09:05', endTime: '03:00',
       description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
       place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
     } satisfies EventData
@@ -108,9 +115,16 @@ describe('Eventernote duplicate detection', () => {
     expect(initialBody.get('event_name')).toBe('Sample Live')
     expect(initialBody.get('date[month]')).toBe('9')
     expect(initialBody.get('date[day]')).toBe('8')
-    expect(initialBody.get('start_time[hour]')).toBe('9')
-    expect(initialBody.get('start_time[minute]')).toBe('5')
+    expect(initialBody.get('open_time[hour]')).toBe('08')
+    expect(initialBody.get('open_time[minute]')).toBe('30')
+    expect(initialBody.get('start_time[hour]')).toBe('09')
+    expect(initialBody.get('start_time[minute]')).toBe('05')
+    expect(initialBody.get('end_time[hour]')).toBe('03')
+    expect(initialBody.get('end_time[minute]')).toBe('00')
     expect(confirmationBody.get('authenticity_token')).toBe('confirmation-token')
+    expect(confirmationBody.get('open_time')).toBe('08:30')
+    expect(confirmationBody.get('start_time')).toBe('09:05')
+    expect(confirmationBody.get('end_time')).toBe('03:00')
     expect(confirmationBody.get('commit')).toBe('登録する')
   })
 
