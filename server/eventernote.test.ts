@@ -106,7 +106,10 @@ describe('Eventernote duplicate detection', () => {
         `, 'https://www.eventernote.com/events/add/confirm')
       }
       if (url.endsWith('/events/add') && init?.method === 'POST') {
-        return response('', 'https://www.eventernote.com/events/779')
+        return response(`
+          <link rel="canonical" href="https://www.eventernote.com/events/add/complete">
+          <a href="/events/779/">イベントページへ</a>
+        `, 'https://www.eventernote.com/events/add/complete')
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -142,6 +145,37 @@ describe('Eventernote duplicate detection', () => {
     expect(confirmationBody.get('start_time')).toBe('09:05')
     expect(confirmationBody.get('end_time')).toBe('03:00')
     expect(confirmationBody.get('commit')).toBe('登録する')
+  })
+
+  it('does not accept an ambiguous complete page with multiple event links', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        return response('<form action="/events/add/confirm"><input name="event_name"></form>', url)
+      }
+      if (url.endsWith('/events/add/confirm')) {
+        return response('<form action="/events/add"><input name="event_name"></form>', url)
+      }
+      return response('<a href="/events/100">one</a><a href="/events/101">two</a>',
+        'https://www.eventernote.com/events/add/complete')
+    }))
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Ambiguous Live', date: '2026-09-08', openTime: '', startTime: '09:05', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '10', [])).rejects.toThrow('Eventernote events 提交未成功')
   })
 
   it('logs safe structured metadata when the confirmation submission fails', async () => {

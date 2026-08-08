@@ -50,6 +50,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
 - Send Eventernote date parts as decimal integers, preserve two-digit time parts, and normalize flattened confirmation-page times to `HH:MM` before the final POST.
 - Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
+- Treat an Eventernote `/add/complete` response as successful only when its HTML exposes exactly one same-origin entity URL, and return that ID for idempotent follow-up steps.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
 - Keep user-visible Traditional Chinese text consistent with the existing interface. Keep code, configuration keys, and developer documentation in English.
@@ -75,7 +76,8 @@ Document core architecture, project purpose, and important implementation contex
 ### Latest Project Context Signals
 
 - Last scan: `2026-08-08`.
-- No core architecture path signal was detected; verify manually from `git diff`.
+- Review `server/eventernote.test.ts` for architecture or project-context updates.
+- Review `server/eventernote.ts` for architecture or project-context updates.
 <!-- commit-and-push-with-agents:context:end -->
 ## Available Features
 
@@ -85,7 +87,8 @@ Document user-facing or agent-facing features here as they are added or changed.
 ### Latest Feature Signals
 
 - Last scan: `2026-08-08`.
-- No feature path signal was detected; verify manually from `git diff`.
+- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
+- Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
 <!-- commit-and-push-with-agents:features:end -->
 ## Common Commands
 
@@ -126,7 +129,7 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 ### Latest Agent-Related Change Signals
 
 - Last scan: `2026-08-08`.
-- `github/workflows/docker-publish.yml` (modified)
+- No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
 
@@ -205,5 +208,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-08-08`.
-- Most affected areas: `github` (1).
+- Most affected areas: `server` (2), `GENTS.md` (1).
 <!-- commit-and-push-with-agents:architecture:end -->

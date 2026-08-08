@@ -41,6 +41,32 @@ function idFromPath(path: string): string {
   return path.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
 }
 
+function entityFromCompletePage(
+  html: string,
+  origin: string,
+  entityPath: 'actors' | 'places' | 'events',
+): SubmittedEntity | undefined {
+  const $ = cheerio.load(html)
+  const candidates = new Map<string, string>()
+  const addCandidate = (value?: string): void => {
+    if (!value) return
+    try {
+      const url = new URL(value, origin)
+      if (url.origin !== new URL(origin).origin) return
+      const match = url.pathname.match(new RegExp(`^/${entityPath}/(?:[^/]+/)?(\\d+)/?$`))
+      if (match) candidates.set(match[1], new URL(`/${entityPath}/${match[1]}`, origin).toString())
+    } catch {
+      // Ignore malformed upstream links and keep looking for one unambiguous entity URL.
+    }
+  }
+  $('link[rel~="canonical"][href], a[href]').each((_, node) => addCandidate($(node).attr('href')))
+  $('meta[property="og:url"][content], meta[name="twitter:url"][content]')
+    .each((_, node) => addCandidate($(node).attr('content')))
+  if (candidates.size !== 1) return undefined
+  const [id, url] = [...candidates.entries()][0]
+  return { id, url }
+}
+
 function integerFormValue(value: string): string {
   return /^\d+$/.test(value) ? String(Number.parseInt(value, 10)) : value
 }
@@ -449,7 +475,12 @@ export class EventernoteClient {
       let id = idFromPath(new URL(response.url).pathname)
       if (response.ok && id && !response.url.includes('/add')) return { id, url: response.url }
 
-      const responsePath = new URL(response.url).pathname
+      let responsePath = new URL(response.url).pathname
+      if (response.ok && new RegExp(`^/${entityPath}/add/complete/?$`).test(responsePath)) {
+        const created = entityFromCompletePage(html, this.origin, entityPath)
+        if (created) return created
+      }
+
       const isConfirmationPage = response.ok && /\/add\/confirm\/?$/.test(responsePath)
       if (!isConfirmationPage) throw this.submissionError(html, entityPath)
 
@@ -464,8 +495,13 @@ export class EventernoteClient {
       stage = 'confirmation_response'
       html = await response.text()
       id = idFromPath(new URL(response.url).pathname)
-      if (!response.ok || !id || response.url.includes('/add')) throw this.submissionError(html, entityPath)
-      return { id, url: response.url }
+      responsePath = new URL(response.url).pathname
+      if (response.ok && id && !response.url.includes('/add')) return { id, url: response.url }
+      if (response.ok && new RegExp(`^/${entityPath}/add/complete/?$`).test(responsePath)) {
+        const created = entityFromCompletePage(html, this.origin, entityPath)
+        if (created) return created
+      }
+      throw this.submissionError(html, entityPath)
     } catch (error) {
       logSubmissionFailure({ entity: entityPath, stage, response: lastResponse }, error)
       throw error
