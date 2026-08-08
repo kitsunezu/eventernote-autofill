@@ -50,6 +50,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
 - Send Eventernote date parts as decimal integers, preserve two-digit time parts, and normalize flattened confirmation-page times to `HH:MM` before the final POST.
 - Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
+- Encode all event performer IDs as one comma-separated `actor_ids` value, and explicitly carry both `actor_ids` and `place_id` from the initial event POST into the confirmation POST.
 - On an Eventernote `/add/complete` response, prefer canonical metadata or the unique same-name entity link; for actors and places only, recover a missing target link from one unique exact-name search result so successful writes remain idempotent despite unrelated footer links.
 - Download selected images through the safe-fetch boundary, convert them to JPEG in an isolated OS temporary directory, upload only the JPEG bytes, and remove the temporary directory after success or failure.
 - For every newly created actor, have the server-side AI supply a hiragana reading, comma-separated search aliases, and Eventernote sex code before any external write; submit them as exact `kana`, `keyword`, and `sex` fields without asking the user to fill them.
@@ -154,6 +155,7 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 - Actor and place completion handling now ignores unrelated same-entity footer links and prefers the link whose text exactly matches the submitted name.
 - When the completion page omits its target link, one unique exact-name actor/place search result can safely recover the accepted ID instead of misreporting a successful write as failed.
 - Regression coverage includes both noisy completion pages and link-free actor completion pages.
+- Event submission preserves all comma-separated performer IDs and the selected place ID through the confirmation POST.
 
 ### 2026-08-08 - Recorded repository changes
 

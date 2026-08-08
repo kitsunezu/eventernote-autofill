@@ -344,6 +344,13 @@ export class EventernoteClient {
     }
   }
 
+  private preserveConfirmationEntityIds(confirmationBody: URLSearchParams, initialBody: URLSearchParams): void {
+    for (const name of ['actor_ids', 'place_id']) {
+      const value = initialBody.get(name)
+      if (value !== null) confirmationBody.set(name, value)
+    }
+  }
+
   private submissionForm(
     $: cheerio.CheerioAPI,
     pageUrl: string,
@@ -516,6 +523,7 @@ export class EventernoteClient {
       if (!confirmationForm.length) throw new Error(`無法辨識 Eventernote ${entityPath} 確認表單`)
       const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
       this.normalizeConfirmationTimes(confirmationBody, body)
+      this.preserveConfirmationEntityIds(confirmationBody, body)
       stage = 'confirmation_post'
       response = await this.postForm(confirmationForm, response.url, confirmationBody)
       lastResponse = response
@@ -588,8 +596,7 @@ export class EventernoteClient {
         ? 'actor_ids'
         : [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
       if (actorKey && actorIds.length) {
-        body.delete(actorKey)
-        for (const id of actorIds) body.append(actorKey, id)
+        body.set(actorKey, actorIds.filter(Boolean).join(','))
       }
     }, 'events', data.title)
   }

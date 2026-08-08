@@ -210,14 +210,14 @@ describe('Eventernote duplicate detection', () => {
       place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
     } satisfies EventData
 
-    await expect(client.createEvent(data, '10', ['82869'])).resolves.toEqual({
+    await expect(client.createEvent(data, '10', ['82869', '94002', '81934'])).resolves.toEqual({
       id: '779', url: 'https://www.eventernote.com/events/779',
     })
     const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
     const confirmationBody = fetchMock.mock.calls[4][1]?.body as URLSearchParams
     expect(initialBody.get('event_name')).toBe('Sample Live')
     expect(initialBody.get('keyword')).toBe('')
-    expect(initialBody.getAll('actor_ids')).toEqual(['82869'])
+    expect(initialBody.getAll('actor_ids')).toEqual(['82869,94002,81934'])
     expect(initialBody.get('place_id')).toBe('10')
     expect(initialBody.get('link')).toBe('https://example.com/event')
     expect(initialBody.get('description')).toBe('Source description')
@@ -230,6 +230,8 @@ describe('Eventernote duplicate detection', () => {
     expect(initialBody.get('end_time[hour]')).toBe('03')
     expect(initialBody.get('end_time[minute]')).toBe('00')
     expect(confirmationBody.get('authenticity_token')).toBe('confirmation-token')
+    expect(confirmationBody.get('actor_ids')).toBe('82869,94002,81934')
+    expect(confirmationBody.get('place_id')).toBe('10')
     expect(confirmationBody.get('open_time')).toBe('08:30')
     expect(confirmationBody.get('start_time')).toBe('09:05')
     expect(confirmationBody.get('end_time')).toBe('03:00')
