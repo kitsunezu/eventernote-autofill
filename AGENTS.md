@@ -116,7 +116,7 @@ No active agents have been documented yet.
 ### Recently Touched Agent Definitions
 
 - Last scan: `2026-08-08`.
-- `AGENTS`: `AGENTS.md`.
+- No explicit agent definitions were inferred from the latest change set.
 <!-- commit-and-push-with-agents:active:end -->
 ## Agent Capabilities & Tools
 
@@ -127,9 +127,24 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 
 - Last scan: `2026-08-08`.
 - `github/workflows/docker-publish.yml` (modified)
-- `AGENTS.md` (modified)
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
+
+### 2026-08-08 - Updated agent-facing project context
+
+- Branch: `main`
+- Affected files: 1 detected before updating `AGENTS.md`.
+- Change types: modified: 1.
+- Agent-related files: 1 detected.
+- Core impact assessment:
+  - Core Architecture: no direct path signal detected.
+  - Available Features: no direct path signal detected.
+  - Common Commands: no direct path signal detected.
+  - Dependencies: no direct path signal detected.
+  - Environment: no direct path signal detected.
+  - Agent System: review/update required (`github/workflows/docker-publish.yml`).
+- Files:
+  - `github/workflows/docker-publish.yml` (modified)
 
 ### 2026-08-08 - Updated agent-facing project context
 
@@ -190,5 +205,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-08-08`.
-- Most affected areas: `github` (1), `AGENTS.md` (1).
+- Most affected areas: `github` (1).
 <!-- commit-and-push-with-agents:architecture:end -->

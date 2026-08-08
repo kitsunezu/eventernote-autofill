@@ -99,7 +99,7 @@ jobs:
             --output "$stack_file" \
             "$PORTAINER_BASE_URL/api/stacks/$PORTAINER_STACK_ID"
 
-          if ! jq -e '(.Env // []) | any(.name == "APP_TOKEN" and ((.value // "") | length > 0))' "$stack_file" >/dev/null; then
+          if ! jq -e '(.Env // []) | any((.name // .Name) == "APP_TOKEN" and (((.value // .Value) // "") | length > 0))' "$stack_file" >/dev/null; then
             echo "::error::APP_TOKEN is not configured in Portainer stack $PORTAINER_STACK_ID"
             exit 1
           fi
