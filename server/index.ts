@@ -15,6 +15,7 @@ import { AnalysisJobs } from './analysis-jobs.js'
 import { extractEventsWithAi, resolveEventernoteEntities } from './ai.js'
 import { loadConfig } from './config.js'
 import { EventernoteClient } from './eventernote.js'
+import { uploadEventImageAsJpeg } from './event-image.js'
 import { loadImagePreview, validImageSignature } from './image-preview.js'
 import { classifySource, inferCountry, isOnlineOnlyEvent, languageForCountry } from './location.js'
 import { extractRelevantPageText, parseEventPage } from './parser.js'
@@ -272,24 +273,14 @@ async function executeSubmission(
     const submittedEventId = progress.eventId
     if (!submittedEventId) throw new Error('Eventernote 活動尚未成功建立')
     if ((image || data.imageUrl) && !progress.imageAdded) {
-      let bytes: Uint8Array
-      let mimeType: string
-      let fileName: string
       if (image) {
-        bytes = Buffer.from(image.base64, 'base64')
-        mimeType = image.mimeType
-        fileName = [...image.fileName].map((character) => {
-          return character.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(character) ? '_' : character
-        }).join('').slice(0, 255)
+        const bytes = Buffer.from(image.base64, 'base64')
         if (bytes.byteLength > 5_000_000) throw new Error('圖片不可超過 5 MB')
-        if (!validImageSignature(bytes, mimeType)) throw new Error('圖片內容與檔案格式不符')
+        if (!validImageSignature(bytes, image.mimeType)) throw new Error('圖片內容與檔案格式不符')
+        await uploadEventImageAsJpeg(eventernote, submittedEventId, { kind: 'uploaded', bytes })
       } else {
-        const downloaded = await safeFetchImage(data.imageUrl)
-        bytes = downloaded.bytes
-        mimeType = downloaded.mimeType
-        fileName = `event.${extensionForMime(mimeType)}`
+        await uploadEventImageAsJpeg(eventernote, submittedEventId, { kind: 'remote', url: data.imageUrl })
       }
-      await eventernote.addEventImage(submittedEventId, bytes, mimeType, fileName)
       progress.imageAdded = true
       steps.push({ label: '活動圖片', status: 'completed', url: progress.eventUrl })
     }
@@ -304,10 +295,6 @@ async function executeSubmission(
       error: error instanceof Error ? error.message : '提交失敗',
     }
   }
-}
-
-function extensionForMime(mimeType: string): string {
-  return mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
 }
 
 async function serveStatic(pathname: string, response: ServerResponse): Promise<boolean> {
