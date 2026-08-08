@@ -282,6 +282,12 @@ export class EventernoteClient {
     return true
   }
 
+  private assignExact(body: URLSearchParams, name: string, value: string): boolean {
+    if (!body.has(name)) return false
+    body.set(name, value)
+    return true
+  }
+
   private assignTimeParts(body: URLSearchParams, prefix: 'open_time' | 'start_time' | 'end_time', value: string): void {
     if (!value) return
     const [hour, minute] = value.split(':')
@@ -490,20 +496,28 @@ export class EventernoteClient {
 
   async createEvent(data: EventData, placeId: string, actorIds: string[]): Promise<SubmittedEntity> {
     return this.submitForm('/events/add', ($, form, body) => {
-      if (!this.assignByContext($, form, body, [/イベント名|活動名稱|タイトル|title/i], data.title)) {
+      if (!this.assignExact(body, 'event_name', data.title)) {
         this.assignNamed(body, /\[name\]$|event_name|title/, data.title)
       }
-      this.assignNamed(body, /place.*id|place_id/, placeId)
-      this.assignNamed(body, /official.*url|source.*url|url/, data.officialUrl)
-      this.assignByContext($, form, body, [/備考|説明|description|note/i], data.description)
+      if (!this.assignExact(body, 'place_id', placeId)) {
+        this.assignNamed(body, /place.*id|place_id/, placeId)
+      }
+      if (!this.assignExact(body, 'link', data.officialUrl)) {
+        this.assignNamed(body, /official.*url|source.*url|url/, data.officialUrl)
+      }
+      if (!this.assignExact(body, 'description', data.description)) {
+        this.assignByContext($, form, body, [/備考|説明|description|note/i], data.description)
+      }
       const [year, month, day] = data.date.split('-')
-      this.assignNamed(body, /start.*year|year.*start|\[year\]/, integerFormValue(year))
-      this.assignNamed(body, /start.*month|month.*start|\[month\]/, integerFormValue(month))
-      this.assignNamed(body, /start.*day|day.*start|\[day\]/, integerFormValue(day))
+      this.assignExact(body, 'date[year]', integerFormValue(year))
+      this.assignExact(body, 'date[month]', integerFormValue(month))
+      this.assignExact(body, 'date[day]', integerFormValue(day))
       this.assignTimeParts(body, 'open_time', data.openTime)
       this.assignTimeParts(body, 'start_time', data.startTime)
       this.assignTimeParts(body, 'end_time', data.endTime)
-      const actorKey = [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
+      const actorKey = body.has('actor_ids')
+        ? 'actor_ids'
+        : [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
       if (actorKey && actorIds.length) {
         body.delete(actorKey)
         for (const id of actorIds) body.append(actorKey, id)

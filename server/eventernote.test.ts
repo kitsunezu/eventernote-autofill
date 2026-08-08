@@ -34,7 +34,10 @@ describe('Eventernote duplicate detection', () => {
       }
       if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
       if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
-        return response('<form action="/events/add" method="post"><input name="event_name"><input name="place_id"></form>', url)
+        return response(`<form action="/events/add" method="post">
+          <input name="event_name"><input name="place_id">
+          <textarea name="link">関連リンク</textarea><textarea name="description">詳細</textarea>
+        </form>`, url)
       }
       if (url.endsWith('/events/add')) return response('', 'https://www.eventernote.com/events/777')
       throw new Error(`Unexpected request: ${url}`)
@@ -51,6 +54,10 @@ describe('Eventernote duplicate detection', () => {
       id: '777', url: 'https://www.eventernote.com/events/777',
     })
     expect(fetchMock.mock.calls.some(([input]) => input.toString().includes('/events/search'))).toBe(false)
+    const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
+    expect(initialBody.get('event_name')).toBe('Sample Live')
+    expect(initialBody.get('link')).toBe('')
+    expect(initialBody.get('description')).toBe('')
   })
 
   it('posts the Eventernote confirmation form before accepting the created event', async () => {
@@ -69,7 +76,9 @@ describe('Eventernote duplicate detection', () => {
         return response(`
           <form action="/events/add/confirm" method="post">
             <input type="hidden" name="authenticity_token" value="initial-token">
-            <input name="event_name"><input name="place_id">
+            <input type="hidden" name="actor_ids">
+            <tr><th>イベント名</th><td><input name="keyword"><input name="event_name"></td></tr>
+            <select name="place_id"><option value=""></option></select>
             <select name="date[year]"><option value="2026">2026</option></select>
             <select name="date[month]"><option value="8">8</option></select>
             <select name="date[day]"><option value="8">8</option></select>
@@ -79,6 +88,8 @@ describe('Eventernote duplicate detection', () => {
             <select name="start_time[minute]"><option value=""></option></select>
             <select name="end_time[hour]"><option value=""></option></select>
             <select name="end_time[minute]"><option value=""></option></select>
+            <textarea name="link"></textarea>
+            <textarea name="description"></textarea>
           </form>
         `, url)
       }
@@ -103,16 +114,21 @@ describe('Eventernote duplicate detection', () => {
     const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
     const data = {
       title: 'Sample Live', date: '2026-09-08', openTime: '08:30', startTime: '09:05', endTime: '03:00',
-      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      description: 'Source description', officialUrl: 'https://example.com/event', imageUrl: '', descriptionLanguage: 'ja', actors: [],
       place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
     } satisfies EventData
 
-    await expect(client.createEvent(data, '10', [])).resolves.toEqual({
+    await expect(client.createEvent(data, '10', ['82869'])).resolves.toEqual({
       id: '779', url: 'https://www.eventernote.com/events/779',
     })
     const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
     const confirmationBody = fetchMock.mock.calls[4][1]?.body as URLSearchParams
     expect(initialBody.get('event_name')).toBe('Sample Live')
+    expect(initialBody.get('keyword')).toBe('')
+    expect(initialBody.getAll('actor_ids')).toEqual(['82869'])
+    expect(initialBody.get('place_id')).toBe('10')
+    expect(initialBody.get('link')).toBe('https://example.com/event')
+    expect(initialBody.get('description')).toBe('Source description')
     expect(initialBody.get('date[month]')).toBe('9')
     expect(initialBody.get('date[day]')).toBe('8')
     expect(initialBody.get('open_time[hour]')).toBe('08')

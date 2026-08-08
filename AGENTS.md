@@ -49,6 +49,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Keep error messages actionable without including credentials, authorization headers, upstream response bodies that may contain private data, or complete Portainer stack payloads.
 - Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
 - Send Eventernote date parts as decimal integers, preserve two-digit time parts, and normalize flattened confirmation-page times to `HH:MM` before the final POST.
+- Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
 - Keep user-visible Traditional Chinese text consistent with the existing interface. Keep code, configuration keys, and developer documentation in English.
