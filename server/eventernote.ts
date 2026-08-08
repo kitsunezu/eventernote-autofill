@@ -45,10 +45,13 @@ function entityFromCompletePage(
   html: string,
   origin: string,
   entityPath: 'actors' | 'places' | 'events',
+  expectedName = '',
 ): SubmittedEntity | undefined {
   const $ = cheerio.load(html)
-  const candidates = new Map<string, string>()
-  const addCandidate = (value?: string): void => {
+  const metadataCandidates = new Map<string, string>()
+  const namedCandidates = new Map<string, string>()
+  const allCandidates = new Map<string, string>()
+  const addCandidate = (candidates: Map<string, string>, value?: string): void => {
     if (!value) return
     try {
       const url = new URL(value, origin)
@@ -59,9 +62,20 @@ function entityFromCompletePage(
       // Ignore malformed upstream links and keep looking for one unambiguous entity URL.
     }
   }
-  $('link[rel~="canonical"][href], a[href]').each((_, node) => addCandidate($(node).attr('href')))
+  $('link[rel~="canonical"][href]').each((_, node) => addCandidate(metadataCandidates, $(node).attr('href')))
   $('meta[property="og:url"][content], meta[name="twitter:url"][content]')
-    .each((_, node) => addCandidate($(node).attr('content')))
+    .each((_, node) => addCandidate(metadataCandidates, $(node).attr('content')))
+  if (metadataCandidates.size === 1) {
+    const [id, url] = [...metadataCandidates.entries()][0]
+    return { id, url }
+  }
+
+  $('a[href]').each((_, node) => {
+    const href = $(node).attr('href')
+    addCandidate(allCandidates, href)
+    if (expectedName && normalize($(node).text()) === normalize(expectedName)) addCandidate(namedCandidates, href)
+  })
+  const candidates = namedCandidates.size ? namedCandidates : allCandidates
   if (candidates.size !== 1) return undefined
   const [id, url] = [...candidates.entries()][0]
   return { id, url }
@@ -441,9 +455,22 @@ export class EventernoteClient {
     path: string,
     configure: ($: cheerio.CheerioAPI, form: cheerio.Cheerio<AnyNode>, body: URLSearchParams) => void,
     entityPath: 'actors' | 'places' | 'events',
+    expectedName = '',
   ): Promise<SubmittedEntity> {
     let stage: SubmissionStage = 'login'
     let lastResponse: Response | undefined
+    const identifyCreatedEntity = async (html: string): Promise<SubmittedEntity | undefined> => {
+      const fromPage = entityFromCompletePage(html, this.origin, entityPath, expectedName)
+      if (fromPage || !expectedName || entityPath === 'events') return fromPage
+      const kind = entityPath === 'actors' ? 'actor' : 'place'
+      const matches = await this.searchEntities(expectedName, kind).catch(() => [])
+      const exact = new Map(matches
+        .filter((candidate) => normalize(candidate.name) === normalize(expectedName))
+        .map((candidate) => [candidate.id, candidate]))
+      if (exact.size !== 1) return undefined
+      const candidate = [...exact.values()][0]
+      return { id: candidate.id, url: new URL(`/${entityPath}/${candidate.id}`, this.origin).toString() }
+    }
     try {
       await this.login()
       stage = 'open_form'
@@ -477,7 +504,7 @@ export class EventernoteClient {
 
       let responsePath = new URL(response.url).pathname
       if (response.ok && new RegExp(`^/${entityPath}/add/complete/?$`).test(responsePath)) {
-        const created = entityFromCompletePage(html, this.origin, entityPath)
+        const created = await identifyCreatedEntity(html)
         if (created) return created
       }
 
@@ -498,7 +525,7 @@ export class EventernoteClient {
       responsePath = new URL(response.url).pathname
       if (response.ok && id && !response.url.includes('/add')) return { id, url: response.url }
       if (response.ok && new RegExp(`^/${entityPath}/add/complete/?$`).test(responsePath)) {
-        const created = entityFromCompletePage(html, this.origin, entityPath)
+        const created = await identifyCreatedEntity(html)
         if (created) return created
       }
       throw this.submissionError(html, entityPath)
@@ -522,7 +549,7 @@ export class EventernoteClient {
         this.assignByContext($, form, body, [/検索キーワード|search.*keyword/i], actor.searchKeywords)
       }
       if (actor.sex && form.find('input[name="sex"], select[name="sex"]').length) body.set('sex', actor.sex)
-    }, 'actors')
+    }, 'actors', actor.name)
   }
 
   createPlace(place: PlaceData): Promise<SubmittedEntity> {
@@ -533,7 +560,7 @@ export class EventernoteClient {
       if (!this.assignByContext($, form, body, [/住所|地址|address/i], place.address)) {
         this.assignNamed(body, /address/, place.address)
       }
-    }, 'places')
+    }, 'places', place.name)
   }
 
   async createEvent(data: EventData, placeId: string, actorIds: string[]): Promise<SubmittedEntity> {
@@ -564,6 +591,6 @@ export class EventernoteClient {
         body.delete(actorKey)
         for (const id of actorIds) body.append(actorKey, id)
       }
-    }, 'events')
+    }, 'events', data.title)
   }
 }

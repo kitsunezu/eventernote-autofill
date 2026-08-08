@@ -36,7 +36,8 @@ describe('Eventernote duplicate detection', () => {
         </form>`, 'https://www.eventernote.com/actors/add/confirm')
       }
       if (url.endsWith('/actors/add') && init?.method === 'POST') {
-        return response('<a href="/actors/sora-sato/901">出演者ページへ</a>',
+        return response(`<main><a href="/actors/sora-sato/901">佐藤空</a></main>
+          <footer><a href="/actors/popular/28">水樹奈々</a></footer>`,
           'https://www.eventernote.com/actors/add/complete')
       }
       throw new Error(`Unexpected request: ${url}`)
@@ -55,6 +56,45 @@ describe('Eventernote duplicate detection', () => {
     expect(Object.fromEntries(initialBody)).toMatchObject({
       name: '佐藤空', kana: 'さとうそら', keyword: 'Sora Sato,さとうそら', sex: '2',
     })
+  })
+
+  it('recovers a newly created actor ID from an exact search when the complete page has no target link', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/actors/add') && (!init?.method || init.method === 'GET')) {
+        return response(`<form action="/actors/add/confirm" method="post">
+          <input name="name"><input name="kana"><input name="keyword"><input name="sex">
+        </form>`, url)
+      }
+      if (url.endsWith('/actors/add/confirm')) {
+        return response(`<form action="/actors/add" method="post">
+          <input type="hidden" name="name" value="佐藤空">
+        </form>`, 'https://www.eventernote.com/actors/add/confirm')
+      }
+      if (url.endsWith('/actors/add') && init?.method === 'POST') {
+        return response('<p>登録が完了しました。</p>', 'https://www.eventernote.com/actors/add/complete')
+      }
+      if (url.includes('/api/actors/search')) {
+        return response(JSON.stringify({ results: [{ id: 94002, name: '佐藤空' }] }), url)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.createActor({
+      name: '佐藤空', reading: 'さとうそら', searchKeywords: 'Sora Sato', sex: '2',
+      selectedId: '', createNew: true, candidates: [],
+    })).resolves.toEqual({ id: '94002', url: 'https://www.eventernote.com/actors/94002' })
   })
 
   it('returns a useful error with existing event links', () => {
