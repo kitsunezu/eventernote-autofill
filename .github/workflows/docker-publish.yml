@@ -85,6 +85,14 @@ jobs:
             echo "::error::Cloudflare Access service token secrets are not configured"
             exit 1
           fi
+          if [[ ! "$CF_ACCESS_CLIENT_ID" =~ ^[0-9a-fA-F]{32}\.access$ ]]; then
+            echo "::error::CF_ACCESS_CLIENT_ID has an invalid format"
+            exit 1
+          fi
+          if [[ ! "$CF_ACCESS_CLIENT_SECRET" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::CF_ACCESS_CLIENT_SECRET has an invalid format"
+            exit 1
+          fi
 
           redeploy_dir="$(mktemp -d)"
           trap 'rm -rf "$redeploy_dir"' EXIT
@@ -92,12 +100,22 @@ jobs:
           payload_file="$redeploy_dir/redeploy.json"
           response_file="$redeploy_dir/response.json"
 
-          curl --fail-with-body --silent --show-error \
+          stack_http_status="$(curl --silent --show-error \
             --header "CF-Access-Client-ID: $CF_ACCESS_CLIENT_ID" \
             --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
             --header "X-API-Key: $PORTAINER_API_KEY" \
             --output "$stack_file" \
-            "$PORTAINER_BASE_URL/api/stacks/$PORTAINER_STACK_ID"
+            --write-out '%{http_code}' \
+            "$PORTAINER_BASE_URL/api/stacks/$PORTAINER_STACK_ID")"
+
+          if [ "$stack_http_status" -lt 200 ] || [ "$stack_http_status" -ge 300 ]; then
+            echo "::error::Portainer stack inspection failed (HTTP $stack_http_status)"
+            exit 1
+          fi
+          if ! jq -e 'type == "object"' "$stack_file" >/dev/null 2>&1; then
+            echo "::error::Portainer stack inspection did not return JSON; check the Cloudflare Access service-token policy"
+            exit 1
+          fi
 
           if ! jq -e '(.Env // []) | any((.name // .Name) == "APP_TOKEN" and (((.value // .Value) // "") | length > 0))' "$stack_file" >/dev/null; then
             echo "::error::APP_TOKEN is not configured in Portainer stack $PORTAINER_STACK_ID"
