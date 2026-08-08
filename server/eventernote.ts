@@ -510,12 +510,18 @@ export class EventernoteClient {
 
   createActor(actor: ActorData): Promise<SubmittedEntity> {
     return this.submitForm('/actors/add', ($, form, body) => {
-      if (!this.assignByContext($, form, body, [/名前|名稱|name/i], actor.name)) {
+      if (!this.assignExact(body, 'name', actor.name)
+        && !this.assignByContext($, form, body, [/名前|名稱|name/i], actor.name)) {
         this.assignNamed(body, /\[name\]$|actor_name/, actor.name)
       }
-      if (!this.assignByContext($, form, body, [/よみ|読み|かな|kana|reading/i], actor.reading)) {
+      if (!this.assignExact(body, 'kana', actor.reading)
+        && !this.assignByContext($, form, body, [/よみ|読み|かな|kana|reading/i], actor.reading)) {
         this.assignNamed(body, /kana|reading|yomi/, actor.reading)
       }
+      if (!this.assignExact(body, 'keyword', actor.searchKeywords)) {
+        this.assignByContext($, form, body, [/検索キーワード|search.*keyword/i], actor.searchKeywords)
+      }
+      if (actor.sex && form.find('input[name="sex"], select[name="sex"]').length) body.set('sex', actor.sex)
     }, 'actors')
   }
 

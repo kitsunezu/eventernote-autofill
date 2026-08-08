@@ -179,7 +179,7 @@ export function parseEventPage(html: string, sourceUrl: string): Pick<ReviewEven
     descriptionLanguage: languageForCountry(countryCode),
     place: { name: placeName, address, countryCode, selectedId: placeId, createNew: false, candidates: [] },
     actors: performers.map((name) => ({
-      name, reading: '',
+      name, reading: '', searchKeywords: '', sex: '',
       selectedId: linkedActors.find((actor) => actor.name === name)?.id ?? '', createNew: false,
       candidates: [],
     })),

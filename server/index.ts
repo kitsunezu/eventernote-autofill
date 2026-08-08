@@ -29,6 +29,7 @@ const eventernote = new EventernoteClient(
   config.eventernotePassword,
 )
 const analyses = new AnalysisJobs()
+const ACTOR_METADATA_RETRY_WARNING_PREFIX = 'AI 尚未完整補全新出演者'
 
 function setAnalysisStage(analysisId: string, stage: AnalysisStage): void {
   analyses.setStage(analysisId, stage)
@@ -37,6 +38,8 @@ function setAnalysisStage(analysisId: string, stage: AnalysisStage): void {
 const ActorSchema = z.object({
   name: z.string().trim().max(200),
   reading: z.string().trim().max(200),
+  searchKeywords: z.string().trim().max(500).default(''),
+  sex: z.enum(['', '1', '2', '3']).default(''),
   selectedId: z.string().regex(/^\d*$/),
   createNew: z.boolean(),
   candidates: z.array(z.object({
@@ -125,7 +128,9 @@ function requiredWarnings(data: EventData, includeEntitySelection = true): strin
   if (data.actors.length === 0) warnings.push('未設定出演者，請確認活動確實沒有出演者')
   for (const actor of data.actors) if (!actor.name && !actor.selectedId) warnings.push('出演者名稱不可留空')
   for (const actor of data.actors) {
-    if (actor.name && actor.createNew && !actor.reading) warnings.push(`AI 未能補全新出演者「${actor.name}」的讀音，請重新核對`)
+    if (actor.name && actor.createNew && (!actor.reading || !actor.searchKeywords || !actor.sex)) {
+      warnings.push(`${ACTOR_METADATA_RETRY_WARNING_PREFIX}「${actor.name}」的登錄資料；提交前會自動重試`)
+    }
   }
   if (includeEntitySelection) {
     if (data.place.name && !data.place.selectedId && !data.place.createNew) warnings.push('請確認使用現有場所，或建立新場所')
@@ -240,6 +245,27 @@ async function executeSubmission(
   const progress = structuredClone(inputProgress)
   const steps: SubmissionResult['steps'] = []
   try {
+    const actorsMissingMetadata = data.actors.filter((actor) => (
+      actor.createNew && (!actor.reading || !actor.searchKeywords || !actor.sex)
+    ))
+    if (actorsMissingMetadata.length) {
+      if (!config.openAiApiKey) throw new Error('伺服器未設定 OpenAI，無法補全新出演者資料')
+      const completed = await resolveEventernoteEntities(
+        config.openAiApiKey, config.openAiBaseUrl, config.openAiModel, data.officialUrl, data,
+      )
+      data.actors = completed.data.actors
+    }
+    for (const actor of data.actors) {
+      if (!actor.createNew) continue
+      const missing = [
+        ...(!actor.reading ? ['よみがな'] : []),
+        ...(!actor.searchKeywords ? ['検索キーワード'] : []),
+        ...(!actor.sex ? ['性別'] : []),
+      ]
+      if (missing.length) {
+        throw new Error(`AI 未能補全新出演者「${actor.name}」的 ${missing.join('、')}，尚未送出 Eventernote`)
+      }
+    }
     for (const actor of data.actors) {
       if (actor.selectedId) {
         steps.push({ label: `出演者：${actor.name}`, status: 'skipped' })
@@ -515,7 +541,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       evidence: body.evidence ?? {},
       warnings: [],
     })
-    const blockingWarnings = review.warnings.filter((warning) => !warning.startsWith('未設定出演者'))
+    const blockingWarnings = review.warnings.filter((warning) => (
+      !warning.startsWith('未設定出演者') && !warning.startsWith(ACTOR_METADATA_RETRY_WARNING_PREFIX)
+    ))
     json(response, 200, {
       data: review.data,
       evidence: review.evidence,
@@ -530,7 +558,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       progress: SubmissionProgressSchema.optional(),
       image: SubmissionImageSchema.optional(),
     }).parse(await readJson(request, 8_000_000))
-    const blockingWarnings = requiredWarnings(body.data).filter((warning) => !warning.startsWith('未設定出演者'))
+    const blockingWarnings = requiredWarnings(body.data).filter((warning) => (
+      !warning.startsWith('未設定出演者') && !warning.startsWith(ACTOR_METADATA_RETRY_WARNING_PREFIX)
+    ))
     if (blockingWarnings.length) {
       json(response, 400, { error: blockingWarnings.join('；') })
       return

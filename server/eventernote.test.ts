@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { duplicateSubmissionMessage, EventernoteClient } from './eventernote.js'
-import type { EventData } from '../shared/types.js'
+import type { ActorData, EventData } from '../shared/types.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -8,6 +8,55 @@ afterEach(() => {
 })
 
 describe('Eventernote duplicate detection', () => {
+  it('submits every required actor registration field through the confirmation step', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/actors/add') && (!init?.method || init.method === 'GET')) {
+        return response(`<form action="/actors/add/confirm" method="post">
+          <input name="name"><input name="kana"><input name="keyword">
+          <input type="radio" name="sex" value="1"><input type="radio" name="sex" value="2">
+          <input type="radio" name="sex" value="3">
+        </form>`, url)
+      }
+      if (url.endsWith('/actors/add/confirm')) {
+        return response(`<form action="/actors/add" method="post">
+          <input type="hidden" name="name" value="佐藤空">
+          <input type="hidden" name="kana" value="さとうそら">
+          <input type="hidden" name="keyword" value="Sora Sato,さとうそら">
+          <input type="hidden" name="sex" value="2">
+        </form>`, 'https://www.eventernote.com/actors/add/confirm')
+      }
+      if (url.endsWith('/actors/add') && init?.method === 'POST') {
+        return response('<a href="/actors/sora-sato/901">出演者ページへ</a>',
+          'https://www.eventernote.com/actors/add/complete')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const actor = {
+      name: '佐藤空', reading: 'さとうそら', searchKeywords: 'Sora Sato,さとうそら', sex: '2',
+      selectedId: '', createNew: true, candidates: [],
+    } satisfies ActorData
+
+    await expect(client.createActor(actor)).resolves.toEqual({
+      id: '901', url: 'https://www.eventernote.com/actors/901',
+    })
+    const initialBody = fetchMock.mock.calls[3][1]?.body as URLSearchParams
+    expect(Object.fromEntries(initialBody)).toMatchObject({
+      name: '佐藤空', kana: 'さとうそら', keyword: 'Sora Sato,さとうそら', sex: '2',
+    })
+  })
+
   it('returns a useful error with existing event links', () => {
     const html = `<div class="alert-danger">同じイベントは既に登録済みです</div>
       <a href="/events/102">既存イベント</a>`

@@ -1,6 +1,7 @@
 export type Confidence = 'high' | 'medium' | 'low' | 'missing'
 export type SourceKind = 'official' | 'ticketing' | 'x' | 'facebook' | 'instagram' | 'eventernote' | 'other'
 export type DescriptionLanguage = 'ja' | 'zh-Hant' | 'zh-Hans' | 'en' | 'ko'
+export type ActorSex = '' | '1' | '2' | '3'
 export type AnalysisStage =
   | 'fetching_source'
   | 'following_links'
@@ -26,6 +27,10 @@ export interface ActorData {
   name: string
   /** Filled by the server for new performers; never collected from the user. */
   reading: string
+  /** Comma-separated aliases filled by the server for new performers. */
+  searchKeywords: string
+  /** Eventernote sex code: 1 female, 2 male, 3 mixed. Filled by the server. */
+  sex: ActorSex
   selectedId: string
   createNew: boolean
   candidates: EntityCandidate[]

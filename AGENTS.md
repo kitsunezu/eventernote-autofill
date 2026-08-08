@@ -52,6 +52,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
 - Treat an Eventernote `/add/complete` response as successful only when its HTML exposes exactly one same-origin entity URL, and return that ID for idempotent follow-up steps.
 - Download selected images through the safe-fetch boundary, convert them to JPEG in an isolated OS temporary directory, upload only the JPEG bytes, and remove the temporary directory after success or failure.
+- For every newly created actor, have the server-side AI supply a hiragana reading, comma-separated search aliases, and Eventernote sex code before any external write; submit them as exact `kana`, `keyword`, and `sex` fields without asking the user to fill them.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
 - Keep user-visible Traditional Chinese text consistent with the existing interface. Keep code, configuration keys, and developer documentation in English.
@@ -77,9 +78,15 @@ Document core architecture, project purpose, and important implementation contex
 ### Latest Project Context Signals
 
 - Last scan: `2026-08-08`.
+- Review `server/ai.test.ts` for architecture or project-context updates.
+- Review `server/ai.ts` for architecture or project-context updates.
+- Review `server/api-client.test.ts` for architecture or project-context updates.
+- Review `server/eventernote.test.ts` for architecture or project-context updates.
+- Review `server/eventernote.ts` for architecture or project-context updates.
 - Review `server/index.ts` for architecture or project-context updates.
-- Review `server/event-image.test.ts` for architecture or project-context updates.
-- Review `server/event-image.ts` for architecture or project-context updates.
+- Review `server/parser.ts` for architecture or project-context updates.
+- Review `server/submission-readiness.test.ts` for architecture or project-context updates.
+- Review `src/App.tsx` for architecture or project-context updates.
 <!-- commit-and-push-with-agents:context:end -->
 ## Available Features
 
@@ -89,9 +96,15 @@ Document user-facing or agent-facing features here as they are added or changed.
 ### Latest Feature Signals
 
 - Last scan: `2026-08-08`.
+- Review `server/ai.test.ts` for user-facing or agent-facing feature updates.
+- Review `server/ai.ts` for user-facing or agent-facing feature updates.
+- Review `server/api-client.test.ts` for user-facing or agent-facing feature updates.
+- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
+- Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
 - Review `server/index.ts` for user-facing or agent-facing feature updates.
-- Review `server/event-image.test.ts` for user-facing or agent-facing feature updates.
-- Review `server/event-image.ts` for user-facing or agent-facing feature updates.
+- Review `server/parser.ts` for user-facing or agent-facing feature updates.
+- Review `server/submission-readiness.test.ts` for user-facing or agent-facing feature updates.
+- Review `src/App.tsx` for user-facing or agent-facing feature updates.
 <!-- commit-and-push-with-agents:features:end -->
 ## Common Commands
 
@@ -101,7 +114,7 @@ Document build, test, lint, run, and release commands here.
 ### Latest Command Signals
 
 - Last scan: `2026-08-08`.
-- Review `package.json` for build, test, lint, run, or release command changes.
+- No command path signal was detected; verify manually from `git diff`.
 <!-- commit-and-push-with-agents:commands:end -->
 ## Dependencies & Development Environment
 
@@ -111,9 +124,7 @@ Document dependency managers, runtime versions, setup steps, and development env
 ### Latest Dependency and Environment Signals
 
 - Last scan: `2026-08-08`.
-- Dependency files:
-  - `package-lock.json`
-  - `package.json`
+- Dependency files: no direct path signal detected.
 - Development environment files: no direct path signal detected.
 <!-- commit-and-push-with-agents:environment:end -->
 ## Active Agents
@@ -137,6 +148,32 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 - No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
+
+### 2026-08-08 - Recorded repository changes
+
+- Branch: `main`
+- Affected files: 11 detected before updating `AGENTS.md`.
+- Change types: modified: 11.
+- Agent-related files: none detected by path heuristics.
+- Core impact assessment:
+  - Core Architecture: review/update required (`server/ai.test.ts`, `server/ai.ts`, `server/api-client.test.ts`, `server/eventernote.test.ts`, `server/eventernote.ts` and 4 more).
+  - Available Features: review/update required (`server/ai.test.ts`, `server/ai.ts`, `server/api-client.test.ts`, `server/eventernote.test.ts`, `server/eventernote.ts` and 4 more).
+  - Common Commands: no direct path signal detected.
+  - Dependencies: no direct path signal detected.
+  - Environment: no direct path signal detected.
+  - Agent System: no direct path signal detected.
+- Files:
+  - `GENTS.md` (modified)
+  - `server/ai.test.ts` (modified)
+  - `server/ai.ts` (modified)
+  - `server/api-client.test.ts` (modified)
+  - `server/eventernote.test.ts` (modified)
+  - `server/eventernote.ts` (modified)
+  - `server/index.ts` (modified)
+  - `server/parser.ts` (modified)
+  - `server/submission-readiness.test.ts` (modified)
+  - `shared/types.ts` (modified)
+  - `src/App.tsx` (modified)
 
 ### 2026-08-08 - Recorded repository changes
 
@@ -234,5 +271,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-08-08`.
-- Most affected areas: `server` (3), `GENTS.md` (1), `package-lock.json` (1), `package.json` (1).
+- Most affected areas: `server` (8), `GENTS.md` (1), `shared` (1), `src` (1).
 <!-- commit-and-push-with-agents:architecture:end -->

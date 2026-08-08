@@ -525,7 +525,9 @@ function App() {
 
   const selectActorCandidate = (index: number, candidate: EntityCandidate) => {
     const key = actorEntityKey(index)
-    updateActor(index, { name: candidate.name, reading: '', selectedId: candidate.id, createNew: false })
+    updateActor(index, {
+      name: candidate.name, reading: '', searchKeywords: '', sex: '', selectedId: candidate.id, createNew: false,
+    })
     clearNewConfirmation(key)
     setEditingEntity('')
   }
@@ -555,7 +557,9 @@ function App() {
   const addActor = () => {
     if (!editing || coreLocked) return
     const index = editing.actors.length
-    const actor: ActorData = { name: '', reading: '', selectedId: '', createNew: false, candidates: [] }
+    const actor: ActorData = {
+      name: '', reading: '', searchKeywords: '', sex: '', selectedId: '', createNew: false, candidates: [],
+    }
     update('actors', [...editing.actors, actor])
     setEditingEntity(actorEntityKey(index))
   }
@@ -838,7 +842,9 @@ function App() {
                 onQueryChange={(value) => {
                   clearNewConfirmation(key)
                   setEditingEntity(key)
-                  updateActor(index, { name: value, reading: '', selectedId: '', createNew: false, candidates: [] })
+                  updateActor(index, {
+                    name: value, reading: '', searchKeywords: '', sex: '', selectedId: '', createNew: false, candidates: [],
+                  })
                 }} onSelect={(candidate) => selectActorCandidate(index, candidate)} onConfirmNew={() => confirmNewActor(index)}
                 onCancel={() => setEditingEntity('')} onRemove={() => removeActor(index)} />
             })}

@@ -40,15 +40,23 @@ function currentEvent(): EventData {
       candidates: [{ id: '123', name: 'Parser venue', url: '/places/123', similarity: 1 }],
     },
     actors: [{
-      name: 'Existing Artist', reading: '', selectedId: '456', createNew: false,
+      name: 'Existing Artist', reading: '', searchKeywords: '', sex: '', selectedId: '456', createNew: false,
       candidates: [{ id: '456', name: 'Existing Artist', url: '/actors/456', similarity: 1 }],
     }],
   }
 }
 
 function stubJsonResponse(result: unknown) {
+  const completedResult = result && typeof result === 'object' && 'decisions' in result
+    ? {
+        ...result,
+        decisions: (result as { decisions: Array<Record<string, unknown>> }).decisions.map((decision) => ({
+          searchKeywords: '', sex: '', ...decision,
+        })),
+      }
+    : result
   const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-    output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(result) }] }],
+    output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(completedResult) }] }],
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -242,11 +250,13 @@ describe('resolveEventernoteEntities', () => {
     current.actors[0].candidates = [
       { id: '20', name: 'Existing Artist', url: 'https://www.eventernote.com/actors/example/20', similarity: 1 },
     ]
-    current.actors.push({ name: 'Brand New Artist', reading: '', selectedId: '', createNew: false, candidates: [] })
+    current.actors.push({
+      name: 'Brand New Artist', reading: '', searchKeywords: '', sex: '', selectedId: '', createNew: false, candidates: [],
+    })
     const fetchMock = stubJsonResponse({ decisions: [
       { key: 'place', action: 'existing', candidateId: '10', reading: '', confidence: 'high', reason: 'Name and Tokyo venue context match.' },
       { key: 'actor:0', action: 'existing', candidateId: '20', reading: '', confidence: 'high', reason: 'Exact performer identity.' },
-      { key: 'actor:1', action: 'new', candidateId: '', reading: 'ブランド ニュー アーティスト', confidence: 'medium', reason: 'No Eventernote candidate represents this artist.' },
+      { key: 'actor:1', action: 'new', candidateId: '', reading: 'ブランド ニュー アーティスト', searchKeywords: 'Brand New Artist, BNA', sex: '3', confidence: 'medium', reason: 'No Eventernote candidate represents this artist.' },
     ] })
 
     const resolved = await resolveEventernoteEntities(
@@ -255,7 +265,9 @@ describe('resolveEventernoteEntities', () => {
 
     expect(resolved.data.place).toMatchObject({ selectedId: '10', createNew: false })
     expect(resolved.data.actors[0]).toMatchObject({ selectedId: '20', createNew: false })
-    expect(resolved.data.actors[1]).toMatchObject({ selectedId: '', createNew: true, reading: 'ブランド ニュー アーティスト' })
+    expect(resolved.data.actors[1]).toMatchObject({
+      selectedId: '', createNew: true, reading: 'ぶらんどにゅーあーてぃすと', searchKeywords: 'Brand New Artist,BNA', sex: '3',
+    })
     expect(resolved.evidence['place.selection']?.value).toBe('使用現有：Verified Hall')
     expect(resolved.evidence['actors.1.selection']?.value).toBe('建立新出演者：Brand New Artist')
 
@@ -316,7 +328,7 @@ describe('resolveEventernoteEntities', () => {
       createNew: true,
     }
     const fetchMock = stubJsonResponse({ decisions: [
-      { key: 'actor:0', action: 'new', candidateId: '', reading: 'エグジスティング アーティスト', confidence: 'medium', reason: 'User requested a new performer.' },
+      { key: 'actor:0', action: 'new', candidateId: '', reading: 'エグジスティング アーティスト', searchKeywords: 'Existing Artist', sex: '2', confidence: 'medium', reason: 'User requested a new performer.' },
     ] })
 
     const resolved = await resolveEventernoteEntities(
@@ -324,10 +336,39 @@ describe('resolveEventernoteEntities', () => {
     )
 
     expect(resolved.data.actors[0]).toMatchObject({
-      selectedId: '', createNew: true, reading: 'エグジスティング アーティスト',
+      selectedId: '', createNew: true, reading: 'えぐじすてぃんぐあーてぃすと', searchKeywords: 'Existing Artist', sex: '2',
     })
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
     const input = JSON.parse(body.input[1].content)
     expect(input.entities[0]).toMatchObject({ key: 'actor:0', forceCreateNew: true })
+    expect(body.text.format.schema.properties.decisions.items.required).toEqual(expect.arrayContaining([
+      'reading', 'searchKeywords', 'sex',
+    ]))
+  })
+
+  it('keeps an explicit new actor for automatic submission retry when AI metadata is incomplete', async () => {
+    const current = currentEvent()
+    current.actors[0] = {
+      ...current.actors[0],
+      reading: '',
+      searchKeywords: '',
+      sex: '',
+      selectedId: '',
+      createNew: true,
+    }
+    stubJsonResponse({ decisions: [
+      { key: 'actor:0', action: 'new', candidateId: '', reading: 'not-hiragana', confidence: 'medium', reason: 'Metadata is incomplete.' },
+    ] })
+
+    const resolved = await resolveEventernoteEntities(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna', 'https://example.com/event', current,
+    )
+
+    expect(resolved.data.actors[0]).toMatchObject({
+      selectedId: '', createNew: true, reading: '', searchKeywords: '', sex: '',
+    })
+    expect(resolved.evidence['actors.0.selection']).toMatchObject({
+      value: 'AI 資料不完整', confidence: 'missing',
+    })
   })
 })

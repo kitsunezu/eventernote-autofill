@@ -5,7 +5,9 @@ const data = {
   title: 'Test Event', date: '2026-08-08', openTime: '17:00', startTime: '18:00', endTime: '20:00',
   description: '', officialUrl: 'https://example.com/event', imageUrl: '', descriptionLanguage: 'en' as const,
   place: { name: 'Test Place', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
-  actors: [{ name: 'Test Actor', reading: '', selectedId: '12', createNew: false, candidates: [] }],
+  actors: [{
+    name: 'Test Actor', reading: '', searchKeywords: '', sex: '', selectedId: '12', createNew: false, candidates: [],
+  }],
 }
 
 describe('Eventernote candidate API client', () => {

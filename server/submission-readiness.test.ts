@@ -20,7 +20,9 @@ function eventData(): EventData {
     place: {
       name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '', createNew: false, candidates: [],
     },
-    actors: [{ name: 'Example Actor', reading: '', selectedId: '', createNew: false, candidates: [] }],
+    actors: [{
+      name: 'Example Actor', reading: '', searchKeywords: '', sex: '', selectedId: '', createNew: false, candidates: [],
+    }],
   }
 }
 

@@ -29,6 +29,8 @@ const EntityDecision = z.object({
   action: z.enum(['existing', 'new', 'review']),
   candidateId: z.string(),
   reading: z.string().trim().max(200),
+  searchKeywords: z.string().trim().max(500),
+  sex: z.enum(['', '1', '2', '3']),
   confidence: AiConfidence,
   reason: z.string(),
 })
@@ -124,10 +126,12 @@ const entityResolutionJsonSchema = {
           action: { type: 'string', enum: ['existing', 'new', 'review'] },
           candidateId: { type: 'string' },
           reading: { type: 'string', maxLength: 200 },
+          searchKeywords: { type: 'string', maxLength: 500 },
+          sex: { type: 'string', enum: ['', '1', '2', '3'] },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           reason: { type: 'string' },
         },
-        required: ['key', 'action', 'candidateId', 'reading', 'confidence', 'reason'],
+        required: ['key', 'action', 'candidateId', 'reading', 'searchKeywords', 'sex', 'confidence', 'reason'],
         additionalProperties: false,
       },
     },
@@ -144,6 +148,23 @@ function responseText(payload: unknown): string {
 
 function normalizedName(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')
+}
+
+function hiraganaReading(value: string): string {
+  const normalized = value.normalize('NFKC').replace(/[ァ-ヶ]/g, (character) => {
+    return String.fromCharCode(character.charCodeAt(0) - 0x60)
+  }).replace(/\s+/g, '').trim()
+  return /^[\p{Script=Hiragana}ー・]+$/u.test(normalized) ? normalized : ''
+}
+
+function normalizedActorKeywords(value: string): string {
+  return [...new Set(value.split(/[,，]/).map((keyword) => keyword.trim()).filter(Boolean))].join(',')
+}
+
+function applyNewActorMetadata(actor: ActorData, decision: z.infer<typeof EntityDecision>): void {
+  actor.reading = hiraganaReading(decision.reading)
+  actor.searchKeywords = normalizedActorKeywords(decision.searchKeywords)
+  actor.sex = decision.sex
 }
 
 function validHttpUrl(value: string): string {
@@ -292,7 +313,7 @@ export async function extractEventsWithAi(
     if (currentNames.join('\0') !== nextNames.join('\0')) {
       const previousByName = new Map(data.actors.map((actor) => [normalizedName(actor.name), actor]))
       data.actors = actorNames.map((name): ActorData => previousByName.get(normalizedName(name)) ?? {
-        name, reading: '', selectedId: '', createNew: false, candidates: [],
+        name, reading: '', searchKeywords: '', sex: '', selectedId: '', createNew: false, candidates: [],
       })
       additions.actors = evidence(actorNames.join('、'), current.actors.length ? '核實修正' : '補全')
     }
@@ -392,7 +413,8 @@ export async function resolveEventernoteEntities(
             'Choose review only when available evidence genuinely cannot distinguish existing from new. Prefer a supported existing or new decision whenever possible.',
             'Use high confidence only for a direct or corroborated identity match that is safe to select automatically. Return review for any existing-candidate match that is not high confidence.',
             'For new or review, candidateId must be an empty string. Never invent IDs.',
-            'For every new actor, return its pronunciation in reading using Japanese kana suitable for the Eventernote actor reading field. Use web search when needed. For places, existing actors, and review decisions, return an empty reading.',
+            'For every new actor, use web search when needed and return all Eventernote registration metadata: reading must be hiragana without spaces; searchKeywords must be comma-separated verified aliases, romanizations, or common spellings; sex must be 1 for female, 2 for male, or 3 for a mixed group.',
+            'For places, existing actors, and review decisions, return empty reading, searchKeywords, and sex.',
             'Keep each reason short and factual.',
           ].join(' '),
         },
@@ -453,14 +475,14 @@ export async function resolveEventernoteEntities(
       if (!actor) continue
       actor.selectedId = ''
       actor.createNew = true
-      actor.reading = decision.reading.trim()
-      additions[evidenceKey] = actor.reading
+      applyNewActorMetadata(actor, decision)
+      additions[evidenceKey] = actor.reading && actor.searchKeywords && actor.sex
         ? {
             value: `建立新出演者：${entity.name}`,
-            source: `${reason}；讀音由 OpenAI 補全`.slice(0, 240),
+            source: `${reason}；出演者登錄資料由 OpenAI 補全`.slice(0, 240),
             confidence: 'low',
           }
-        : { value: '需確認', source: 'OpenAI 未能補全新出演者讀音', confidence: 'missing' }
+        : { value: 'AI 資料不完整', source: 'OpenAI 未能補全新出演者登錄資料；提交前會重試', confidence: 'missing' }
       continue
     }
     if (decision.action === 'review' || decision.confidence === 'low') {
@@ -505,10 +527,11 @@ export async function resolveEventernoteEntities(
       if (!actor) continue
       actor.selectedId = ''
       actor.createNew = true
-      actor.reading = decision.reading.trim()
-      if (!actor.reading) {
-        actor.createNew = false
-        markReview('OpenAI 未能補全新出演者讀音')
+      applyNewActorMetadata(actor, decision)
+      if (!actor.reading || !actor.searchKeywords || !actor.sex) {
+        additions[evidenceKey] = {
+          value: 'AI 資料不完整', source: 'OpenAI 未能補全新出演者登錄資料；提交前會重試', confidence: 'missing',
+        }
         continue
       }
     }
