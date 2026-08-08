@@ -19,7 +19,7 @@ function displayTime(data: EventData): string {
   ].filter(Boolean).join(' · ') || '尚未取得時間'
 }
 
-async function imagePayload(file: File): Promise<SubmissionImage> {
+async function imagePayload(file: Blob, fileName: string): Promise<SubmissionImage> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
@@ -27,7 +27,7 @@ async function imagePayload(file: File): Promise<SubmissionImage> {
     reader.readAsDataURL(file)
   })
   return {
-    fileName: file.name,
+    fileName,
     mimeType: file.type as SubmissionImage['mimeType'],
     base64: dataUrl.slice(dataUrl.indexOf(',') + 1),
   }
@@ -242,6 +242,7 @@ function App() {
   const [events, setEvents] = useState<ReviewEvent[]>([])
   const [activeId, setActiveId] = useState('')
   const [images, setImages] = useState<Record<string, File>>({})
+  const previewImages = useRef<Record<string, Blob>>({})
   const [sourceUrl, setSourceUrl] = useState('')
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
@@ -325,17 +326,21 @@ function App() {
     let localUrl = ''
     const controller = new AbortController()
     let timer = 0
+    const previewEventId = activeEvent?.id
     setImageError(false)
     if (activeImage) {
+      if (previewEventId) delete previewImages.current[previewEventId]
       localUrl = URL.createObjectURL(activeImage)
       setPreviewUrl(localUrl)
     } else {
       const remoteUrl = editing?.imageUrl.trim() ?? ''
+      if (previewEventId) delete previewImages.current[previewEventId]
       setPreviewUrl('')
-      if (remoteUrl) {
+      if (remoteUrl && previewEventId) {
         timer = window.setTimeout(() => {
           void api.imagePreview(remoteUrl, controller.signal).then((blob) => {
             if (controller.signal.aborted) return
+            previewImages.current[previewEventId] = blob
             localUrl = URL.createObjectURL(blob)
             setPreviewUrl(localUrl)
           }).catch(() => {
@@ -349,7 +354,7 @@ function App() {
       controller.abort()
       if (localUrl) URL.revokeObjectURL(localUrl)
     }
-  }, [activeImage, editing?.imageUrl])
+  }, [activeEvent?.id, activeImage, editing?.imageUrl])
 
   useEffect(() => {
     if (!activeId || coreLocked || !shouldSearchPlace) {
@@ -677,7 +682,11 @@ function App() {
     setBusy('execute')
     setNotice(null)
     try {
-      const image = activeImage ? await imagePayload(activeImage) : undefined
+      let submissionImage: Blob | undefined = activeImage ?? previewImages.current[activeEvent.id]
+      if (!submissionImage && editing.imageUrl) submissionImage = await api.imagePreview(editing.imageUrl)
+      const image = submissionImage
+        ? await imagePayload(submissionImage, activeImage?.name ?? 'preview-image')
+        : undefined
       const result = await api.submit(editing, activeEvent.submission ?? {}, image)
       updateActiveEvent((event) => ({
         ...event,

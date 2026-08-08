@@ -52,7 +52,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
 - Encode all event performer IDs as one comma-separated `actor_ids` value, and explicitly carry both `actor_ids` and `place_id` from the initial event POST into the confirmation POST.
 - On an Eventernote `/add/complete` response, prefer canonical metadata or the unique same-name entity link; for actors and places only, recover a missing target link from one unique exact-name search result so successful writes remain idempotent despite unrelated footer links.
-- Download selected images through the safe-fetch boundary, convert them to JPEG in an isolated OS temporary directory, upload only the JPEG bytes, and remove the temporary directory after success or failure.
+- Fetch remote images through the safe-fetch preview boundary and submit the exact browser-preview blob instead of re-fetching its URL during the write; convert those bytes to JPEG in an isolated OS temporary directory, upload only the JPEG bytes, and remove the temporary directory after success or failure.
 - For every newly created actor, have the server-side AI supply a hiragana reading, comma-separated search aliases, and Eventernote sex code before any external write; submit them as exact `kana`, `keyword`, and `sex` fields without asking the user to fill them.
 - Maintain idempotent retries after partial Eventernote progress by returning accepted IDs to the browser with every submission result.
 - Do not broaden allowed outbound hosts, ports, content types, sizes, or redirect behavior without security tests.
@@ -149,6 +149,11 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 - No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
+
+### 2026-08-08 - Kept uploaded images identical to the preview
+
+- Remote image previews are cached per review event in browser memory and their exact bytes are sent with the confirmed submission.
+- Submission no longer relies on a second remote URL fetch whose upstream response can differ from the image the user reviewed.
 
 ### 2026-08-08 - Recovered actor IDs from completion pages
 
