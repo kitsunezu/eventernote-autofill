@@ -68,35 +68,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Check Portainer deployment settings
-        id: portainer
+      - name: Trigger Portainer redeploy
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
-          PORTAINER_BASE_URL: ${{ vars.PORTAINER_BASE_URL }}
-          PORTAINER_STACK_ID: ${{ vars.PORTAINER_STACK_ID }}
-          PORTAINER_ENDPOINT_ID: ${{ vars.PORTAINER_ENDPOINT_ID }}
+          PORTAINER_BASE_URL: https://portainer.kitsunet.app
+          PORTAINER_STACK_ID: "46"
+          PORTAINER_ENDPOINT_ID: "3"
         run: |
-          if [ -n "$CF_ACCESS_CLIENT_ID" ] && [ -n "$CF_ACCESS_CLIENT_SECRET" ] \
-            && [ -n "$PORTAINER_API_KEY" ] && [ -n "$PORTAINER_BASE_URL" ] \
-            && [ -n "$PORTAINER_STACK_ID" ] && [ -n "$PORTAINER_ENDPOINT_ID" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Portainer redeploy skipped because deployment settings are incomplete"
+          if [ -z "$PORTAINER_API_KEY" ]; then
+            echo "::error::PORTAINER_API_KEY secret is not configured"
+            exit 1
+          fi
+          if [ -z "$CF_ACCESS_CLIENT_ID" ] || [ -z "$CF_ACCESS_CLIENT_SECRET" ]; then
+            echo "::error::Cloudflare Access service token secrets are not configured"
+            exit 1
           fi
 
-      - name: Trigger Portainer redeploy
-        if: steps.portainer.outputs.configured == 'true'
-        env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
-          PORTAINER_BASE_URL: ${{ vars.PORTAINER_BASE_URL }}
-          PORTAINER_STACK_ID: ${{ vars.PORTAINER_STACK_ID }}
-          PORTAINER_ENDPOINT_ID: ${{ vars.PORTAINER_ENDPOINT_ID }}
-        run: |
           redeploy_dir="$(mktemp -d)"
           trap 'rm -rf "$redeploy_dir"' EXIT
           stack_file="$redeploy_dir/stack.json"

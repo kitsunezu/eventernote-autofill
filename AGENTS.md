@@ -21,7 +21,7 @@ Eventernote Autofill turns one public event URL into one or more reviewable Even
 - `shared/`: types and utilities used by both browser and server builds.
 - `Dockerfile`: production build and non-root runtime image.
 - `docker-compose.yml`: Portainer stack definition using the published GHCR image.
-- `.github/workflows/docker-publish.yml`: validation, image publication, and optional Portainer Git-stack redeploy.
+- `.github/workflows/docker-publish.yml`: validation, image publication, and authenticated Portainer Git-stack redeploy after pushes to `main`.
 
 The production server serves the built frontend and API from port `8790`. `GET /health` must remain unauthenticated for container and deployment health checks.
 
@@ -61,6 +61,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 - Never commit real values for `APP_TOKEN`, `OPENAI_API_KEY`, `EVENTERNOTE_USERNAME`, `EVENTERNOTE_PASSWORD`, or deployment service tokens.
 - A commit or successful image build is not proof of deployment. Verify the Actions publish job, Portainer stack update/container recreation, and the running container's `/health` response independently.
 - Portainer Git redeploy requests must preserve the stack's existing `Env`; omitting it can clear saved environment variables before Compose interpolation.
+- The redeploy job uses `PORTAINER_API_KEY` plus the Cloudflare Access service-token secrets `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`.
 
 ## Overview
 
@@ -74,8 +75,7 @@ Document core architecture, project purpose, and important implementation contex
 ### Latest Project Context Signals
 
 - Last scan: `2026-08-08`.
-- Review `server/eventernote.test.ts` for architecture or project-context updates.
-- Review `server/eventernote.ts` for architecture or project-context updates.
+- No core architecture path signal was detected; verify manually from `git diff`.
 <!-- commit-and-push-with-agents:context:end -->
 ## Available Features
 
@@ -85,8 +85,7 @@ Document user-facing or agent-facing features here as they are added or changed.
 ### Latest Feature Signals
 
 - Last scan: `2026-08-08`.
-- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
-- Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
+- No feature path signal was detected; verify manually from `git diff`.
 <!-- commit-and-push-with-agents:features:end -->
 ## Common Commands
 
@@ -117,7 +116,7 @@ No active agents have been documented yet.
 ### Recently Touched Agent Definitions
 
 - Last scan: `2026-08-08`.
-- No explicit agent definitions were inferred from the latest change set.
+- `AGENTS`: `AGENTS.md`.
 <!-- commit-and-push-with-agents:active:end -->
 ## Agent Capabilities & Tools
 
@@ -127,9 +126,27 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 ### Latest Agent-Related Change Signals
 
 - Last scan: `2026-08-08`.
-- No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
+- `github/workflows/docker-publish.yml` (modified)
+- `AGENTS.md` (modified)
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
+
+### 2026-08-08 - Updated agent-facing project context
+
+- Branch: `main`
+- Affected files: 2 detected before updating `AGENTS.md`.
+- Change types: modified: 2.
+- Agent-related files: 2 detected.
+- Core impact assessment:
+  - Core Architecture: no direct path signal detected.
+  - Available Features: no direct path signal detected.
+  - Common Commands: no direct path signal detected.
+  - Dependencies: no direct path signal detected.
+  - Environment: no direct path signal detected.
+  - Agent System: review/update required (`github/workflows/docker-publish.yml`).
+- Files:
+  - `github/workflows/docker-publish.yml` (modified)
+  - `AGENTS.md` (modified)
 
 ### 2026-08-08 - Recorded repository changes
 
@@ -173,5 +190,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-08-08`.
-- Most affected areas: `server` (2), `GENTS.md` (1).
+- Most affected areas: `github` (1), `AGENTS.md` (1).
 <!-- commit-and-push-with-agents:architecture:end -->
