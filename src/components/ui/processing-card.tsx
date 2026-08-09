@@ -2,6 +2,7 @@ import * as React from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { CheckCircle2, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getMessages, type Locale } from '@/i18n'
 import type { AnalysisStage } from '../../../shared/types'
 
 type ProcessingStatus = 'queued' | 'running' | 'succeeded' | 'failed'
@@ -11,15 +12,8 @@ interface ProcessingCardProps {
   className?: string
   status?: ProcessingStatus
   stage?: AnalysisStage
+  locale?: Locale
 }
-
-const processingStages = [
-  { key: 'fetching_source', label: '正在讀取活動來源...' },
-  { key: 'following_links', label: '正在尋找並讀取購票頁...' },
-  { key: 'preparing_images', label: '正在準備活動圖片...' },
-  { key: 'ai_extraction', label: 'AI 正在辨識頁面與圖片...' },
-  { key: 'preparing_review', label: '正在準備核對資料...' },
-] satisfies Array<{ key: Exclude<AnalysisStage, 'completed'>; label: string }>
 
 const progressRanges: Record<AnalysisStage, { start: number; ceiling: number }> = {
   fetching_source: { start: 4, ceiling: 20 },
@@ -143,7 +137,7 @@ function useEstimatedProgress(stage: AnalysisStage, status: ProcessingStatus): n
   return progress
 }
 
-const PercentageProgressBar: React.FC<{ progress: number }> = ({ progress }) => {
+const PercentageProgressBar: React.FC<{ progress: number; label: string }> = ({ progress, label }) => {
   const reducedMotion = useReducedMotion()
   const percentage = Math.min(100, Math.max(0, Math.round(progress)))
 
@@ -151,14 +145,14 @@ const PercentageProgressBar: React.FC<{ progress: number }> = ({ progress }) => 
     <div
       className="w-[min(28rem,78vw)] max-w-full"
       role="progressbar"
-      aria-label="解析進度"
+      aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percentage}
       aria-valuetext={`${percentage}%`}
     >
       <div className="mb-2 flex items-baseline justify-between gap-4 text-white/60">
-        <span className="text-xs font-medium">解析進度</span>
+        <span className="text-xs font-medium">{label}</span>
         <span className="min-w-12 text-right font-mono text-sm font-semibold tabular-nums text-white">
           {percentage}%
         </span>
@@ -176,23 +170,32 @@ const PercentageProgressBar: React.FC<{ progress: number }> = ({ progress }) => 
 }
 
 export default function ProcessingCard({
-  name = '活動資料解析',
+  name,
   className,
   status = 'queued',
   stage = 'fetching_source',
+  locale = 'zh-TW',
 }: ProcessingCardProps) {
+  const copy = getMessages(locale)
+  const processingStages = [
+    { key: 'fetching_source', label: copy.fetchingSource },
+    { key: 'following_links', label: copy.followingLinks },
+    { key: 'preparing_images', label: copy.preparingImages },
+    { key: 'ai_extraction', label: copy.aiExtraction },
+    { key: 'preparing_review', label: copy.preparingReview },
+  ] satisfies Array<{ key: Exclude<AnalysisStage, 'completed'>; label: string }>
   const progress = useEstimatedProgress(stage, status)
   const stageIndex = stage === 'completed'
     ? processingStages.length
     : Math.max(0, processingStages.findIndex((item) => item.key === stage))
   const currentStage = processingStages[Math.min(stageIndex, processingStages.length - 1)]
   const statusText = status === 'queued'
-    ? '準備開始解析...'
+    ? copy.preparingAnalysis
     : status === 'running'
       ? currentStage.label
       : status === 'succeeded'
-        ? '活動資料整理完成。'
-        : '解析失敗，請稍後再試。'
+        ? copy.analysisComplete
+        : copy.analysisFailed
 
   return (
     <section
@@ -203,7 +206,7 @@ export default function ProcessingCard({
       aria-live="polite"
     >
       <header className="border-b border-white/7 bg-white/[0.015] px-4 py-3">
-        <h2 className="truncate text-sm font-medium text-white/90">{name}</h2>
+        <h2 className="truncate text-sm font-medium text-white/90">{name ?? copy.analysisTitle}</h2>
       </header>
 
       <div className="relative h-[min(400px,52vh)] min-h-72 w-full overflow-hidden bg-[#25262a] text-white">
@@ -238,7 +241,7 @@ export default function ProcessingCard({
             </motion.p>
           </AnimatePresence>
 
-          {status !== 'failed' && <PercentageProgressBar progress={progress} />}
+          {status !== 'failed' && <PercentageProgressBar progress={progress} label={copy.progress} />}
         </div>
       </div>
     </section>

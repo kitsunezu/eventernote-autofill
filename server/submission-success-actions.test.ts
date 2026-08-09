@@ -16,4 +16,18 @@ describe('SubmissionSuccessActions', () => {
     expect(markup).toContain('target="_blank"')
     expect(markup).toContain('rel="noreferrer"')
   })
+
+  it.each([
+    ['ja', 'ホームに戻る', 'Eventernote のイベントページを開く'],
+    ['en', 'Back to home', 'Open Eventernote event page'],
+  ] as const)('renders %s actions', (locale, backLabel, eventLabel) => {
+    const markup = renderToStaticMarkup(createElement(SubmissionSuccessActions, {
+      eventUrl: 'https://www.eventernote.com/events/12345',
+      onBackToLanding: vi.fn(),
+      locale,
+    }))
+
+    expect(markup).toContain(backLabel)
+    expect(markup).toContain(eventLabel)
+  })
 })

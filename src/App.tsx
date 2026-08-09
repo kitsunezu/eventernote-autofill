@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ExternalLink, FileSearch,
-  ImagePlus, LoaderCircle, Pencil, Plus, Search, Send, Trash2, Upload, X,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ExternalLink,
+  Globe2, ImagePlus, LoaderCircle, Pencil, Plus, Search, Send, Trash2, Upload, X,
 } from 'lucide-react'
 import type {
   ActorData, AnalysisStage, AnalyzeResult, AppConfig, EntityCandidate, EventData, Evidence, ReviewEvent, SubmissionImage,
@@ -10,20 +10,41 @@ import { addHoursToTime } from '../shared/time'
 import { api, getAccessKey, setAccessKey, waitForAnalysis } from './api'
 import ProcessingCard from '@/components/ui/processing-card'
 import { SubmissionSuccessActions } from './SubmissionSuccessActions'
+import { detectLocale, getMessages, interpolate, localeOptions, type Locale, type Messages } from './i18n'
 
-function displayTime(data: EventData): string {
-  return [
-    data.openTime && `開場 ${data.openTime}`,
-    data.startTime && `開始 ${data.startTime}`,
-    data.endTime && `結束 ${data.endTime}`,
-  ].filter(Boolean).join(' · ') || '尚未取得時間'
+const localeStorageKey = 'eventernote-autofill-locale'
+
+function initialLocale(): Locale {
+  if (typeof window === 'undefined') return 'zh-TW'
+  const stored = window.localStorage.getItem(localeStorageKey)
+  return localeOptions.some((option) => option.value === stored)
+    ? stored as Locale
+    : detectLocale(window.navigator.language)
 }
 
-async function imagePayload(file: Blob, fileName: string): Promise<SubmissionImage> {
+function LanguageSwitcher({ locale, onChange, copy }: { locale: Locale; onChange: (locale: Locale) => void; copy: Messages }) {
+  return <label className="language-switcher">
+    <Globe2 size={16} aria-hidden="true" />
+    <span className="visually-hidden">{copy.language}</span>
+    <select value={locale} onChange={(event) => onChange(event.target.value as Locale)} aria-label={copy.language}>
+      {localeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  </label>
+}
+
+function displayTime(data: EventData, copy: Messages): string {
+  return [
+    data.openTime && `${copy.doorsOpen} ${data.openTime}`,
+    data.startTime && `${copy.starts} ${data.startTime}`,
+    data.endTime && `${copy.ends} ${data.endTime}`,
+  ].filter(Boolean).join(' · ') || copy.timeUnavailable
+}
+
+async function imagePayload(file: Blob, fileName: string, readError: string): Promise<SubmissionImage> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error ?? new Error('無法讀取圖片'))
+    reader.onerror = () => reject(reader.error ?? new Error(readError))
     reader.readAsDataURL(file)
   })
   return {
@@ -33,13 +54,13 @@ async function imagePayload(file: Blob, fileName: string): Promise<SubmissionIma
   }
 }
 
-function evidenceLabel(evidence?: Evidence): string | undefined {
+function evidenceLabel(evidence: Evidence | undefined, copy: Messages): string | undefined {
   if (!evidence) return undefined
-  return { high: '來源資料', medium: '解析結果', low: 'AI 核對', missing: '需確認' }[evidence.confidence]
+  return { high: copy.sourceData, medium: copy.parsedResult, low: copy.aiReview, missing: copy.needsConfirmation }[evidence.confidence]
 }
 
-function EvidenceTooltip({ evidence }: { evidence?: Evidence }) {
-  const tag = evidenceLabel(evidence)
+function EvidenceTooltip({ evidence, copy }: { evidence?: Evidence; copy: Messages }) {
+  const tag = evidenceLabel(evidence, copy)
   return tag && evidence
     ? <span className="hover-tooltip evidence-tooltip" role="tooltip">
         <strong>{tag}</strong>
@@ -48,13 +69,13 @@ function EvidenceTooltip({ evidence }: { evidence?: Evidence }) {
     : null
 }
 
-function EvidenceBadge({ evidence }: { evidence?: Evidence }) {
-  const tag = evidenceLabel(evidence)
+function EvidenceBadge({ evidence, copy }: { evidence?: Evidence; copy: Messages }) {
+  const tag = evidenceLabel(evidence, copy)
   return tag && evidence?.confidence === 'missing'
     ? <span className="evidence-marker evidence-missing" tabIndex={0}
         aria-label={`${tag}：${evidence.source}`}>
         <span className="evidence-dot" aria-hidden="true" />
-        <EvidenceTooltip evidence={evidence} />
+        <EvidenceTooltip evidence={evidence} copy={copy} />
       </span>
     : null
 }
@@ -71,20 +92,21 @@ interface FieldProps {
   needsInput?: boolean
   disabled?: boolean
   wide?: boolean
+  copy: Messages
 }
 
-function Field({ label, value, onChange, evidence, type = 'text', placeholder, multiline, required, needsInput, disabled, wide }: FieldProps) {
+function Field({ label, value, onChange, evidence, type = 'text', placeholder, multiline, required, needsInput, disabled, wide, copy }: FieldProps) {
   const showRequiredFrame = needsInput ?? (Boolean(required) && !value.trim())
   return <label className={`field ${wide || multiline ? 'field-wide' : ''} ${showRequiredFrame ? 'field-needs-input' : ''}`}>
     <span className="field-label">
-      {label}{required && <b aria-label="必填">*</b>}
-      <EvidenceBadge evidence={evidence} />
+      {label}{required && <b aria-label={copy.required}>*</b>}
+      <EvidenceBadge evidence={evidence} copy={copy} />
     </span>
     <span className="field-value">
       {multiline
         ? <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={6} disabled={disabled} />
         : <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} />}
-      <EvidenceTooltip evidence={evidence} />
+      <EvidenceTooltip evidence={evidence} copy={copy} />
     </span>
   </label>
 }
@@ -107,65 +129,66 @@ interface EventernoteEntityFieldProps {
   onConfirmNew: () => void
   onCancel: () => void
   onRemove?: () => void
+  copy: Messages
 }
 
 function EventernoteEntityField({
   kind, label, name, selectedId, createNew, candidates, status, editing, newConfirmed, disabled, evidence,
-  onBeginEdit, onQueryChange, onSelect, onConfirmNew, onCancel, onRemove,
+  onBeginEdit, onQueryChange, onSelect, onConfirmNew, onCancel, onRemove, copy,
 }: EventernoteEntityFieldProps) {
   const resolved = Boolean(selectedId || (createNew && newConfirmed))
-  const noun = kind === 'place' ? '場所' : '出演者'
+  const noun = kind === 'place' ? copy.place : copy.actor
 
   if (resolved && !editing) return <div className="entity-result-row">
     <button type="button" className="entity-result" disabled={disabled} onClick={onBeginEdit}>
       <span><small>{label}</small><strong>{name}</strong></span>
       <span className={`entity-result-state ${selectedId ? 'existing' : 'new'}`}>
-        {selectedId ? '使用現有項目' : '已確認新增'}
+        {selectedId ? copy.existingItem : copy.confirmedNew}
       </span>
       {!disabled && <Pencil size={16} aria-hidden="true" />}
     </button>
     {onRemove && !disabled && <button type="button" className="entity-remove" onClick={onRemove}
-      aria-label={`移除出演者 ${name}`} title="移除出演者"><Trash2 size={17} /></button>}
+      aria-label={`${copy.removeActor} ${name}`} title={copy.removeActor}><Trash2 size={17} /></button>}
   </div>
 
   return <div className="entity-search-card">
     <div className="entity-search-heading">
-      <span><strong>{label}</strong><small>優先搜尋 Eventernote 既有項目</small></span>
+      <span><strong>{label}</strong><small>{copy.preferExisting}</small></span>
       <span className="entity-heading-actions">
-        <EvidenceBadge evidence={evidence} />
+        <EvidenceBadge evidence={evidence} copy={copy} />
         {onRemove && !disabled && <button type="button" className="entity-remove" onClick={onRemove}
-          aria-label={`移除出演者 ${name}`} title="移除出演者"><Trash2 size={17} /></button>}
+          aria-label={`${copy.removeActor} ${name}`} title={copy.removeActor}><Trash2 size={17} /></button>}
       </span>
     </div>
     <label className="entity-search-input">
       <Search size={18} aria-hidden="true" />
-      <input value={name} disabled={disabled} placeholder={`搜尋 Eventernote ${noun}`}
+      <input value={name} disabled={disabled} placeholder={`${copy.searchEventernote} ${noun}`}
         onChange={(event) => onQueryChange(event.target.value)} />
-      {status === 'loading' && <LoaderCircle className="spin" size={17} aria-label="搜尋中" />}
+      {status === 'loading' && <LoaderCircle className="spin" size={17} aria-label={copy.searching} />}
     </label>
-    {status === 'loading' && <div className="entity-loading" role="status"><LoaderCircle className="spin" size={19} /><span>正在搜尋 Eventernote…</span></div>}
-    {status === 'error' && <p className="entity-search-message error">搜尋失敗，請稍後再試。</p>}
-    {name.trim() && status !== 'loading' && candidates.length > 0 && <div className="entity-options" role="listbox" aria-label={`${label}搜尋結果`}>
-      <div className="entity-options-label">搜尋結果</div>
+    {status === 'loading' && <div className="entity-loading" role="status"><LoaderCircle className="spin" size={19} /><span>{copy.searchingEventernote}</span></div>}
+    {status === 'error' && <p className="entity-search-message error">{copy.searchFailed}</p>}
+    {name.trim() && status !== 'loading' && candidates.length > 0 && <div className="entity-options" role="listbox" aria-label={`${label} ${copy.searchResults}`}>
+      <div className="entity-options-label">{copy.searchResults}</div>
       {candidates.slice(0, 5).map((candidate) => <button type="button" key={candidate.id} role="option"
         aria-selected={candidate.id === selectedId} onClick={() => onSelect(candidate)}>
         <span className={`entity-option-mark ${candidate.id === selectedId ? 'selected' : ''}`}>{candidate.id === selectedId && <Check size={14} />}</span>
-        <span>{candidate.name}</span><small>使用此項目</small>
+        <span>{candidate.name}</span><small>{copy.useThisItem}</small>
       </button>)}
     </div>}
-    {name.trim() && status === 'idle' && candidates.length === 0 && <p className="entity-search-message">沒有找到明確符合的既有項目。</p>}
+    {name.trim() && status === 'idle' && candidates.length === 0 && <p className="entity-search-message">{copy.noExactMatch}</p>}
     {name.trim() && <div className="entity-create-confirm">
-      <span><strong>仍找不到正確項目？</strong><small>新增通常不建議，請先確認名稱與搜尋結果。</small></span>
-      <button type="button" className="secondary-button" disabled={disabled || status === 'loading'} onClick={onConfirmNew}>確認新增「{name}」</button>
+      <span><strong>{copy.stillCannotFind}</strong><small>{copy.createWarning}</small></span>
+      <button type="button" className="secondary-button" disabled={disabled || status === 'loading'} onClick={onConfirmNew}>{copy.confirmCreate} “{name}”</button>
     </div>}
-    {(selectedId || newConfirmed) && <button type="button" className="entity-cancel" onClick={onCancel}>取消修改</button>}
+    {(selectedId || newConfirmed) && <button type="button" className="entity-cancel" onClick={onCancel}>{copy.cancelEdit}</button>}
   </div>
 }
 
-function ErrorText({ text }: { text: string }) {
+function ErrorText({ text, copy }: { text: string; copy: Messages }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g)
   return <>{parts.map((part, index) => part.startsWith('http')
-    ? <a key={`${part}-${index}`} href={part.replace(/[。；，]+$/, '')} target="_blank" rel="noreferrer">查看相關頁面 <ExternalLink size={14} /></a>
+    ? <a key={`${part}-${index}`} href={part.replace(/[。；，]+$/, '')} target="_blank" rel="noreferrer">{copy.relatedPage} <ExternalLink size={14} /></a>
     : part)}</>
 }
 
@@ -236,6 +259,8 @@ function writeAnalysisToConsole(result: AnalyzeResult, aiConfigured: boolean): v
 }
 
 function App() {
+  const [locale, setLocale] = useState<Locale>(initialLocale)
+  const copy = getMessages(locale)
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [configError, setConfigError] = useState('')
   const [configAttempt, setConfigAttempt] = useState(0)
@@ -287,8 +312,13 @@ function App() {
     || editing.actors.some((actor, index) => actor.createNew && !isNewConfirmed(actorEntityKey(index)))
   ))
 
+  useEffect(() => {
+    window.localStorage.setItem(localeStorageKey, locale)
+    document.documentElement.lang = locale
+  }, [locale])
+
   const showError = (error: unknown) => {
-    setNotice({ type: 'error', text: error instanceof Error ? error.message : '發生錯誤' })
+    setNotice({ type: 'error', text: error instanceof Error ? error.message : copy.genericError })
   }
 
   const updateActiveEvent = useCallback((updateEvent: (event: ReviewEvent) => ReviewEvent) => {
@@ -316,7 +346,7 @@ function App() {
           if (attempt < 4) await new Promise((resolve) => window.setTimeout(resolve, 500))
         }
       }
-      if (!cancelled) setConfigError(lastError instanceof Error ? lastError.message : '無法讀取伺服器設定')
+      if (!cancelled) setConfigError(lastError instanceof Error ? lastError.message : '__server_config_failed__')
     }
     void load()
     return () => { cancelled = true }
@@ -572,11 +602,11 @@ function App() {
   const prepareForConfirmation = async () => {
     if (!activeEvent || !editing) return
     if (needsEntityConfirmation) {
-      setNotice({ type: 'error', text: '請先搜尋 Eventernote，並確認所有建議新增的場所與出演者。' })
+      setNotice({ type: 'error', text: copy.confirmEntitiesFirst })
       return
     }
     if (!config?.eventernoteConfigured || !config.eventernoteWriteEnabled) {
-      setNotice({ type: 'error', text: '尚未連接 Eventernote，請由伺服器管理員完成設定。' })
+      setNotice({ type: 'error', text: copy.eventernoteUnavailable })
       return
     }
     if (activeEvent.submission?.eventId) {
@@ -598,7 +628,7 @@ function App() {
         setConfirmOpen(true)
       } else {
         setEditingFact(!checked.data.title.trim() ? 'title' : (!checked.data.date || !checked.data.startTime) ? 'schedule' : '')
-        setNotice({ type: 'error', text: '仍有資料需要補充或選擇，請查看提示。' })
+        setNotice({ type: 'error', text: copy.missingSubmissionData })
       }
     } catch (error) { showError(error) } finally { setBusy('') }
   }
@@ -632,17 +662,17 @@ function App() {
     setEvents(remaining)
     setImages((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== target.id)))
     if (target.id === activeId) setActiveId(remaining[0]?.id ?? '')
-    setNotice(remaining.length ? { type: 'ok', text: `已移除場次「${target.data.title}」。` } : null)
+    setNotice(remaining.length ? { type: 'ok', text: interpolate(copy.sessionRemoved, { title: target.data.title }) } : null)
   }
 
   const chooseImage = (file?: File) => {
     if (!file || !activeEvent || !editing) return
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setNotice({ type: 'error', text: '圖片只支援 JPEG、PNG 或 WebP。' })
+      setNotice({ type: 'error', text: copy.imageTypeError })
       return
     }
     if (file.size > 5_000_000) {
-      setNotice({ type: 'error', text: '圖片不可超過 5 MB。' })
+      setNotice({ type: 'error', text: copy.imageSizeError })
       return
     }
     setImages((current) => ({ ...current, [activeEvent.id]: file }))
@@ -657,7 +687,7 @@ function App() {
       submission: event.submission ? { ...event.submission, imageAdded: false, completed: false } : undefined,
     }))
     setImageError(false)
-    setNotice({ type: 'ok', text: '圖片已保留在瀏覽器，送出時才會上傳。' })
+    setNotice({ type: 'ok', text: copy.imageStored })
     if (fileInput.current) fileInput.current.value = ''
   }
 
@@ -674,7 +704,7 @@ function App() {
         submission: event.submission ? { ...event.submission, imageAdded: false, completed: false } : undefined,
       }
     })
-    setNotice({ type: 'ok', text: '已移除瀏覽器圖片，可改用圖片網址。' })
+    setNotice({ type: 'ok', text: copy.imageRemoved })
   }
 
   const execute = async () => {
@@ -685,7 +715,7 @@ function App() {
       let submissionImage: Blob | undefined = activeImage ?? previewImages.current[activeEvent.id]
       if (!submissionImage && editing.imageUrl) submissionImage = await api.imagePreview(editing.imageUrl)
       const image = submissionImage
-        ? await imagePayload(submissionImage, activeImage?.name ?? 'preview-image')
+        ? await imagePayload(submissionImage, activeImage?.name ?? 'preview-image', copy.readImageFailed)
         : undefined
       const result = await api.submit(editing, activeEvent.submission ?? {}, image)
       updateActiveEvent((event) => ({
@@ -701,140 +731,146 @@ function App() {
         setImageEditorOpen(false)
       }
       setNotice(result.completed
-        ? { type: 'ok', text: '活動已建立完成。' }
-        : { type: 'error', text: result.error ?? '提交未完成，請修正後重試。' })
+        ? { type: 'ok', text: copy.eventCreated }
+        : { type: 'error', text: result.error ?? copy.submissionIncomplete })
     } catch (error) { showError(error); setConfirmOpen(false) } finally { setBusy('') }
   }
 
-  if (!config && configError) return <div className="center-state">
-    <AlertTriangle size={28} />
-    <p>無法連線到 API：{configError}</p>
-    <button className="primary-button" onClick={() => setConfigAttempt((attempt) => attempt + 1)}>重新連線</button>
-  </div>
+  const languageSwitcher = <LanguageSwitcher locale={locale} onChange={setLocale} copy={copy} />
 
-  if (!config) return <div className="center-state"><LoaderCircle className="spin" /><p>正在載入</p></div>
+  if (!config && configError) return <>
+    {languageSwitcher}
+    <div className="center-state">
+      <AlertTriangle size={28} />
+      <p>{interpolate(copy.apiUnavailable, { error: configError === '__server_config_failed__' ? copy.serverConfigFailed : configError })}</p>
+      <button className="primary-button" onClick={() => setConfigAttempt((attempt) => attempt + 1)}>{copy.reconnect}</button>
+    </div>
+  </>
 
-  if (!authenticated) return <main className="auth-screen">
+  if (!config) return <>{languageSwitcher}<div className="center-state"><LoaderCircle className="spin" /><p>{copy.loading}</p></div></>
+
+  if (!authenticated) return <>{languageSwitcher}<main className="auth-screen">
     <section className="auth-panel">
-      <span className="brand-mark"><FileSearch size={23} /></span>
+      <img className="auth-logo" src="/logo-mark.svg" alt="" aria-hidden="true" />
       <h1>Eventernote Autofill</h1>
-      <p>輸入伺服器存取密鑰。</p>
-      <label className="field field-wide"><span className="field-label">存取密鑰</span>
+      <p>{copy.authInstruction}</p>
+      <label className="field field-wide"><span className="field-label">{copy.accessKey}</span>
         <input type="password" value={accessKeyInput} onChange={(event) => setAccessKeyInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void authenticate()} autoFocus />
       </label>
-      <button className="primary-button" onClick={() => void authenticate()}>登入</button>
+      <button className="primary-button" onClick={() => void authenticate()}>{copy.signIn}</button>
       {notice?.type === 'error' && <p className="inline-error">{notice.text}</p>}
     </section>
-  </main>
+  </main></>
 
-  if (!activeEvent || !editing) return <main className="landing-screen">
+  if (!activeEvent || !editing) return <>{languageSwitcher}<main className="landing-screen">
     <div className="landing-shell">
       {busy !== 'analyze' && <div className="landing-title">
+        <img className="landing-logo" src="/logo-mark.svg" alt="" aria-hidden="true" />
         <h1>Eventernote Autofill</h1>
-        <p>從活動網址，整理成可確認的 Eventernote 資料。</p>
+        <p>{copy.landingSubtitle}</p>
       </div>}
 
       {busy === 'analyze' ? <div className="analysis-card-wrap">
-        <ProcessingCard status="running" stage={analysisStage} />
+        <ProcessingCard status="running" stage={analysisStage} locale={locale} />
       </div> : <>
         <div className="landing-input">
-          <input type="url" aria-label="活動來源網址" placeholder="貼上活動網址" value={sourceUrl}
+          <input type="url" aria-label={copy.sourceUrl} placeholder={copy.pasteUrl} value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void analyze()} autoFocus />
-          <button disabled={!sourceUrl.trim()} onClick={() => void analyze()} aria-label="開始解析" title="開始解析"><ArrowRight size={22} /></button>
+          <button disabled={!sourceUrl.trim()} onClick={() => void analyze()} aria-label={copy.startAnalysis} title={copy.startAnalysis}><ArrowRight size={22} /></button>
         </div>
         {notice?.type === 'error' && <div className="landing-error" role="alert"><AlertTriangle size={18} /><span>{notice.text}</span></div>}
       </>}
     </div>
-  </main>
+  </main></>
 
-  return <div className="app-shell">
+  return <>{languageSwitcher}<div className="app-shell">
     <main className="page results-page">
-      <nav className="results-nav" aria-label="活動操作">
-        <button onClick={startOver} disabled={Boolean(busy)}><ArrowLeft size={18} />解析另一個網址</button>
+      <nav className="results-nav" aria-label={copy.eventActions}>
+        <button onClick={startOver} disabled={Boolean(busy)}><ArrowLeft size={18} />{copy.analyzeAnother}</button>
       </nav>
 
-      {events.length > 1 && <div className="session-tabs" role="tablist" aria-label="活動場次">
+      {events.length > 1 && <div className="session-tabs" role="tablist" aria-label={copy.eventSessions}>
         {events.map((item, index) => <div key={item.id} className={`session-tab ${item.id === activeId ? 'active' : ''}`}>
           <button className="session-select" role="tab" aria-selected={item.id === activeId}
             disabled={Boolean(busy)} onClick={() => selectEvent(item)}>
-            <span>{item.data.startTime || `場次 ${index + 1}`}</span>
-            <small>{item.data.title.match(/日場|夜場|昼公演|夜公演|After[- ]?Talk|アフタートーク|ライブアフタースペシャルトーク/i)?.[0] ?? `場次 ${index + 1}`}</small>
+            <span>{item.data.startTime || `${copy.session} ${index + 1}`}</span>
+            <small>{item.data.title.match(/日場|夜場|昼公演|夜公演|After[- ]?Talk|アフタートーク|ライブアフタースペシャルトーク/i)?.[0] ?? `${copy.session} ${index + 1}`}</small>
           </button>
           <button className="session-delete" disabled={Boolean(busy)} onClick={() => removeEvent(item)}
-            aria-label={`刪除場次 ${item.data.title}`} title="刪除這個場次"><Trash2 size={16} /></button>
+            aria-label={`${copy.deleteSession} ${item.data.title}`} title={copy.deleteThisSession}><Trash2 size={16} /></button>
         </div>)}
       </div>}
 
       {notice && <div className={`notice notice-${notice.type}`} role="status">
         {notice.type === 'ok' ? <CheckCircle2 size={19} /> : <AlertTriangle size={19} />}
         <span>{notice.text}</span>
-        <button className="close-button" onClick={() => setNotice(null)} aria-label="關閉提示"><X size={18} /></button>
+        <button className="close-button" onClick={() => setNotice(null)} aria-label={copy.closeNotice}><X size={18} /></button>
       </div>}
 
       <article className="event-editor">
         <header className="event-heading">
           <div className="event-heading-copy">
-            <h2>{editing.title || '未命名活動'}</h2>
-            <a href={activeEvent.sourceUrl} target="_blank" rel="noreferrer">查看來源 <ExternalLink size={15} /></a>
+            <h2>{editing.title || copy.untitledEvent}</h2>
+            <a href={activeEvent.sourceUrl} target="_blank" rel="noreferrer">{copy.viewSource} <ExternalLink size={15} /></a>
           </div>
           {!activeEvent.submission?.completed && <button className="primary-button event-submit-button"
             disabled={Boolean(busy) || needsEntityConfirmation} onClick={() => void prepareForConfirmation()}>
             {busy === 'prepare' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
-            {needsEntityConfirmation ? '先確認新增項目' : busy === 'prepare' ? '正在檢查...' : '提交'}
+            {needsEntityConfirmation ? copy.confirmNewItemsFirst : busy === 'prepare' ? copy.checking : copy.submit}
           </button>}
         </header>
 
-        {activeEvent.error && <section className="issues" aria-label="送出錯誤">
-          <p className="submission-error"><AlertTriangle size={18} /><span><ErrorText text={activeEvent.error} /></span></p>
+        {activeEvent.error && <section className="issues" aria-label={copy.submissionError}>
+          <p className="submission-error"><AlertTriangle size={18} /><span><ErrorText text={activeEvent.error} copy={copy} /></span></p>
         </section>}
 
-        <section className="ai-review" aria-label="AI 整理結果">
+        <section className="ai-review" aria-label={copy.aiResult}>
           <div className="review-facts">
             {editingFact === 'title' && !coreLocked
               ? <div className="review-fact review-fact-wide review-fact-editing">
-                  <label htmlFor="review-title">活動</label>
+                  <label htmlFor="review-title">{copy.event}</label>
                   <div className="review-fact-input-row">
                     <input id="review-title" value={editing.title} autoFocus onChange={(event) => update('title', event.target.value)}
                       onKeyDown={(event) => event.key === 'Enter' && setEditingFact('')} />
-                    <button type="button" className="secondary-button" onClick={() => setEditingFact('')}>完成</button>
+                    <button type="button" className="secondary-button" onClick={() => setEditingFact('')}>{copy.done}</button>
                   </div>
                 </div>
               : <button type="button" className="review-fact review-fact-wide" disabled={coreLocked}
                   onClick={() => setEditingFact('title')}>
-                  <span>活動</span><strong>{editing.title || '尚未取得活動名稱'}</strong>
-                  {!coreLocked && <small><Pencil size={13} />點一下修改</small>}
+                  <span>{copy.event}</span><strong>{editing.title || copy.missingEventName}</strong>
+                  {!coreLocked && <small><Pencil size={13} />{copy.clickToEdit}</small>}
                 </button>}
             {editingFact === 'schedule' && !coreLocked
               ? <div className="review-fact review-fact-editing review-schedule-editor">
-                  <label>日期<input type="date" value={editing.date} autoFocus onChange={(event) => update('date', event.target.value)} /></label>
-                  <label>開場<input type="time" value={editing.openTime} onChange={(event) => update('openTime', event.target.value)} /></label>
-                  <label>開始<input type="time" value={editing.startTime} onChange={(event) => updateStartTime(event.target.value)} /></label>
-                  <label>結束<input type="time" value={editing.endTime} onChange={(event) => update('endTime', event.target.value)} /></label>
-                  <button type="button" className="secondary-button" onClick={() => setEditingFact('')}>完成</button>
+                  <label>{copy.date}<input type="date" value={editing.date} autoFocus onChange={(event) => update('date', event.target.value)} /></label>
+                  <label>{copy.doorsOpen}<input type="time" value={editing.openTime} onChange={(event) => update('openTime', event.target.value)} /></label>
+                  <label>{copy.starts}<input type="time" value={editing.startTime} onChange={(event) => updateStartTime(event.target.value)} /></label>
+                  <label>{copy.ends}<input type="time" value={editing.endTime} onChange={(event) => update('endTime', event.target.value)} /></label>
+                  <button type="button" className="secondary-button" onClick={() => setEditingFact('')}>{copy.done}</button>
                 </div>
               : <button type="button" className="review-fact" disabled={coreLocked} onClick={() => setEditingFact('schedule')}>
-                  <span>日期</span><strong>{editing.date || '尚未取得'}</strong><small>{displayTime(editing)}</small>
-                  {!coreLocked && <small className="review-fact-edit-hint"><Pencil size={13} />點一下修改</small>}
+                  <span>{copy.date}</span><strong>{editing.date || copy.unavailable}</strong><small>{displayTime(editing, copy)}</small>
+                  {!coreLocked && <small className="review-fact-edit-hint"><Pencil size={13} />{copy.clickToEdit}</small>}
                 </button>}
             <button type="button" className="review-fact" disabled={coreLocked} onClick={() => setImageEditorOpen(true)}>
-              <span>活動圖片</span><strong>{editing.uploadedImage?.fileName || (editing.imageUrl ? '已從來源取得' : '來源未提供')}</strong>
-              <small>{coreLocked ? '圖片不是必填項目' : <><ImagePlus size={14} />點一下修改</>}</small>
+              <span>{copy.eventImage}</span><strong>{editing.uploadedImage?.fileName || (editing.imageUrl ? copy.obtainedFromSource : copy.notProvidedBySource)}</strong>
+              <small>{coreLocked ? copy.imageOptional : <><ImagePlus size={14} />{copy.clickToEdit}</>}</small>
             </button>
           </div>
 
           {previewUrl && !imageError && <button type="button" className="review-image-preview" disabled={coreLocked}
-            onClick={() => setImageEditorOpen(true)} aria-label="預覽並修改活動圖片">
-            <img src={previewUrl} alt="活動圖片預覽" onError={() => setImageError(true)} />
+            onClick={() => setImageEditorOpen(true)} aria-label={copy.previewEditImage}>
+            <img src={previewUrl} alt={copy.imagePreview} onError={() => setImageError(true)} />
           </button>}
 
           <section className="summary-entities" aria-labelledby="summary-entities-title">
             <div className="summary-section-heading">
-              <div><h4 id="summary-entities-title">Eventernote 項目</h4><p>只會採用 Eventernote 項目；點選已匹配項目可重新搜尋。</p></div>
+              <div><h4 id="summary-entities-title">{copy.eventernoteItems}</h4><p>{copy.eventernoteItemsHelp}</p></div>
             </div>
-            <EventernoteEntityField kind="place" label="場所" name={editing.place.name} selectedId={editing.place.selectedId}
+            <EventernoteEntityField kind="place" label={copy.place} name={editing.place.name} selectedId={editing.place.selectedId}
               createNew={editing.place.createNew} candidates={editing.place.candidates} status={placeSearchStatus}
               editing={placeSearchVisible} newConfirmed={isNewConfirmed(placeEntityKey)} disabled={coreLocked}
-              evidence={activeEvent.evidence['place.selection']} onBeginEdit={() => setEditingEntity(placeEntityKey)}
+              evidence={activeEvent.evidence['place.selection']} copy={copy} onBeginEdit={() => setEditingEntity(placeEntityKey)}
               onQueryChange={(value) => {
                 clearNewConfirmation(placeEntityKey)
                 setEditingEntity(placeEntityKey)
@@ -844,10 +880,10 @@ function App() {
               const key = actorEntityKey(index)
               const searchVisible = editingEntity === key || (actor.createNew && !isNewConfirmed(key))
                 || Boolean(actor.name && !actor.selectedId && !actor.createNew)
-              return <EventernoteEntityField key={key} kind="actor" label={`出演者 ${index + 1}`} name={actor.name}
+              return <EventernoteEntityField key={key} kind="actor" label={`${copy.actor} ${index + 1}`} name={actor.name}
                 selectedId={actor.selectedId} createNew={actor.createNew} candidates={actor.candidates}
                 status={actorSearchStatuses[index] ?? 'idle'} editing={searchVisible} newConfirmed={isNewConfirmed(key)} disabled={coreLocked}
-                evidence={activeEvent.evidence[`actors.${index}.selection`]} onBeginEdit={() => setEditingEntity(key)}
+                evidence={activeEvent.evidence[`actors.${index}.selection`]} copy={copy} onBeginEdit={() => setEditingEntity(key)}
                 onQueryChange={(value) => {
                   clearNewConfirmation(key)
                   setEditingEntity(key)
@@ -857,25 +893,25 @@ function App() {
                 }} onSelect={(candidate) => selectActorCandidate(index, candidate)} onConfirmNew={() => confirmNewActor(index)}
                 onCancel={() => setEditingEntity('')} onRemove={() => removeActor(index)} />
             })}
-            {editing.actors.length === 0 && <p className="summary-empty">來源未提供出演者；如有遺漏，可從 Eventernote 搜尋新增。</p>}
+            {editing.actors.length === 0 && <p className="summary-empty">{copy.noActors}</p>}
             {!coreLocked && <button type="button" className="add-button summary-add-actor" onClick={addActor}>
-              <Plus size={17} />新增出演者
+              <Plus size={17} />{copy.addActor}
             </button>}
           </section>
 
           <label className="review-description-editor">
-            <span>活動說明</span>
+            <span>{copy.description}</span>
             <textarea rows={6} value={editing.description} disabled={coreLocked} onChange={(event) => update('description', event.target.value)}
-              placeholder="來源未提供說明；若沒有可靠內容，請維持空白。" />
+              placeholder={copy.descriptionPlaceholder} />
           </label>
           {activeEvent.warnings.length > 0 && <details className="review-notes">
-            <summary>AI 留意事項（{activeEvent.warnings.length}）</summary>
+            <summary>{interpolate(copy.aiNotes, { count: activeEvent.warnings.length })}</summary>
             <ul>{activeEvent.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
           </details>}
         </section>
 
         {activeEvent.submission?.completed && <footer className="editor-actions">
-          <SubmissionSuccessActions eventUrl={activeEvent.submission.eventUrl} onBackToLanding={startOver} />
+          <SubmissionSuccessActions eventUrl={activeEvent.submission.eventUrl} onBackToLanding={startOver} locale={locale} />
         </footer>}
       </article>
     </main>
@@ -885,29 +921,29 @@ function App() {
       <section className="confirm-modal image-editor-modal" role="dialog" aria-modal="true" aria-labelledby="image-editor-title">
         <div className="confirm-heading">
           <span><ImagePlus size={22} /></span>
-          <div><h2 id="image-editor-title">修改活動圖片</h2><p>上傳圖片，或貼上可公開存取的圖片連結。</p></div>
+          <div><h2 id="image-editor-title">{copy.editImage}</h2><p>{copy.imageEditorHelp}</p></div>
         </div>
         <div className={`image-preview ${imageError || !previewUrl ? 'image-empty' : ''}`}>
           {previewUrl && !imageError
-            ? <img src={previewUrl} alt="活動圖片預覽" onError={() => setImageError(true)} />
-            : <><ImagePlus size={34} /><span>{imageError ? '無法載入圖片' : '圖片預覽'}</span></>}
+            ? <img src={previewUrl} alt={copy.imagePreview} onError={() => setImageError(true)} />
+            : <><ImagePlus size={34} /><span>{imageError ? copy.imageLoadFailed : copy.imagePreviewPlaceholder}</span></>}
         </div>
-        <Field label="圖片網址" value={editing.imageUrl} onChange={updateImageUrl}
-          placeholder={editing.uploadedImage ? '已使用上傳圖片' : 'https://...'}
-          disabled={Boolean(busy) || Boolean(editing.uploadedImage)} wide />
+        <Field label={copy.imageUrl} value={editing.imageUrl} onChange={updateImageUrl}
+          placeholder={editing.uploadedImage ? copy.uploadedImageInUse : 'https://...'}
+          disabled={Boolean(busy) || Boolean(editing.uploadedImage)} wide copy={copy} />
         <div className="upload-row">
           <input ref={fileInput} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp"
             onChange={(event) => chooseImage(event.target.files?.[0])} />
           <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={() => fileInput.current?.click()}>
-            <Upload size={18} />{editing.uploadedImage ? '更換圖片' : '上傳圖片'}
+            <Upload size={18} />{editing.uploadedImage ? copy.replaceImage : copy.uploadImage}
           </button>
           {editing.uploadedImage && <div className="uploaded-file"><span className="file-name" title={editing.uploadedImage.fileName}>{editing.uploadedImage.fileName}</span>
             <button type="button" className="icon-button" disabled={Boolean(busy)} onClick={removeImage}
-              title="移除上傳圖片" aria-label="移除上傳圖片"><Trash2 size={17} /></button></div>}
+              title={copy.removeUploadedImage} aria-label={copy.removeUploadedImage}><Trash2 size={17} /></button></div>}
         </div>
-        {editing.uploadedImage && <p className="image-editor-note">已使用上傳圖片；移除後可改用圖片網址。</p>}
+        {editing.uploadedImage && <p className="image-editor-note">{copy.uploadedImageNote}</p>}
         <div className="modal-actions">
-          <button type="button" className="primary-button" onClick={() => setImageEditorOpen(false)}>完成</button>
+          <button type="button" className="primary-button" onClick={() => setImageEditorOpen(false)}>{copy.done}</button>
         </div>
       </section>
     </div>}
@@ -916,32 +952,28 @@ function App() {
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div className="confirm-heading">
           <span><CheckCircle2 size={22} /></span>
-          <div><h2 id="confirm-title">最後確認</h2><p>以下內容即將寫入 Eventernote。</p></div>
+          <div><h2 id="confirm-title">{copy.finalConfirmation}</h2><p>{copy.willWriteToEventernote}</p></div>
         </div>
         <dl className="confirm-summary">
-          <div><dt>活動</dt><dd>{editing.title}</dd></div>
-          <div><dt>日期時間</dt><dd>{editing.date} {editing.startTime}</dd></div>
-          <div><dt>場所</dt><dd>{editing.place.name}（{editing.place.selectedId ? '使用現有項目' : '建立新項目'}）</dd></div>
-          <div><dt>出演者</dt><dd>{editing.actors.map((actor) => `${actor.name}（${actor.selectedId ? '使用現有' : '建立新項目'}）`).join('、') || '未提供'}</dd></div>
-          <div><dt>圖片</dt><dd>{editing.uploadedImage?.fileName || editing.imageUrl || '未提供'}</dd></div>
+          <div><dt>{copy.event}</dt><dd>{editing.title}</dd></div>
+          <div><dt>{copy.dateTime}</dt><dd>{editing.date} {editing.startTime}</dd></div>
+          <div><dt>{copy.place}</dt><dd>{editing.place.name} ({editing.place.selectedId ? copy.existingItem : copy.createNewItem})</dd></div>
+          <div><dt>{copy.actor}</dt><dd>{editing.actors.map((actor) => `${actor.name} (${actor.selectedId ? copy.useExistingShort : copy.createNewItem})`).join(locale === 'en' ? ', ' : '、') || copy.notProvided}</dd></div>
+          <div><dt>{copy.image}</dt><dd>{editing.uploadedImage?.fileName || editing.imageUrl || copy.notProvided}</dd></div>
         </dl>
         {previewUrl && !imageError && <div className="confirm-image-preview">
-          <img src={previewUrl} alt="即將送出的活動圖片預覽" onError={() => setImageError(true)} />
+          <img src={previewUrl} alt={copy.outgoingImagePreview} onError={() => setImageError(true)} />
         </div>}
-        {(editing.place.createNew || editing.actors.some((actor) => actor.createNew)) && <div className="creation-sequence">
-          <strong>新增項目的寫入順序</strong>
-          <span>先在 Eventernote 建立已確認的新場所／出演者並取得 ID → 回填本次資料 → 最後建立活動。</span>
-        </div>}
-        <p className="confirm-note">點選「確認寫入」即代表你已核對以上摘要。若有任何疑問，請返回修改。</p>
+        <p className="confirm-note">{copy.confirmationNote}</p>
         <div className="modal-actions">
-          <button className="secondary-button" onClick={() => setConfirmOpen(false)}>返回修改</button>
+          <button className="secondary-button" onClick={() => setConfirmOpen(false)}>{copy.backToEdit}</button>
           <button className="primary-button" disabled={Boolean(busy)} onClick={() => void execute()}>
-            {busy === 'execute' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{busy === 'execute' ? '寫入中...' : '確認寫入'}
+            {busy === 'execute' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{busy === 'execute' ? copy.writing : copy.confirmWrite}
           </button>
         </div>
       </section>
     </div>}
-  </div>
+  </div></>
 }
 
 export default App

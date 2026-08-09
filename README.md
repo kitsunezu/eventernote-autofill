@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo-mark.svg" width="128" height="128" alt="Eventernote Autofill logo">
+</p>
+
 # Eventernote Autofill
 
 Private review flow for turning a source URL into verified Eventernote data. It accepts official pages, ticketing sites, X, Facebook, Instagram, and Eventernote pages. Social and incomplete sources are inspected for ticketing links, and the most complete parsed source becomes the extraction baseline. When OpenAI is configured, every parse is checked against cleaned source content, discovered ticketing pages, event images, and web search; separately scheduled sessions become independent review records, and high-confidence corrections can replace parsed values. Every value remains editable and requires explicit confirmation before an external write.
