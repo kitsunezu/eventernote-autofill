@@ -3,15 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eventernote Autofill｜活動資料自動整理與核對</title>
+    <meta name="description" content="貼上公開活動網址，自動擷取、核對並整理為可確認的 Eventernote 活動資料；每次寫入前都由使用者明確確認。" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="theme-color" content="#232428" />
+    <link rel="canonical" href="https://autofill.kitsunezu.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Eventernote Autofill" />
+    <meta property="og:locale" content="zh_TW" />
+    <meta property="og:title" content="Eventernote Autofill｜活動資料自動整理與核對" />
+    <meta property="og:description" content="從公開活動網址擷取並核對活動資訊，整理成送出前可逐項確認的 Eventernote 資料。" />
+    <meta property="og:url" content="https://autofill.kitsunezu.com/" />
+    <meta property="og:image" content="https://autofill.kitsunezu.com/social-preview.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Eventernote Autofill 活動資料整理工具" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Eventernote Autofill｜活動資料自動整理與核對" />
+    <meta name="twitter:description" content="從公開活動網址擷取並核對活動資訊，整理成送出前可逐項確認的 Eventernote 資料。" />
+    <meta name="twitter:image" content="https://autofill.kitsunezu.com/social-preview.png" />
+    <meta name="twitter:image:alt" content="Eventernote Autofill 活動資料整理工具" />
+
     <link rel="icon" href="/logo-mark.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Eventernote Autofill</title>
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Eventernote Autofill",
+        "url": "https://autofill.kitsunezu.com/",
+        "description": "從公開活動網址擷取、核對並整理為可確認的 Eventernote 活動資料。",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "inLanguage": ["zh-Hant", "ja", "en"],
+        "image": "https://autofill.kitsunezu.com/social-preview.png",
+        "sameAs": "https://github.com/kitsunezu/eventernote-autofill"
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <noscript>
+        <main>
+          <h1>Eventernote Autofill</h1>
+          <p>從公開活動網址擷取並核對活動資訊，整理成送出前可逐項確認的 Eventernote 資料。請啟用 JavaScript 使用本工具。</p>
+        </main>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

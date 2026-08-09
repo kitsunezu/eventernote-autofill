@@ -753,7 +753,7 @@ function App() {
     <section className="auth-panel">
       <img className="auth-logo" src="/logo-mark.svg" alt="" aria-hidden="true" />
       <h1>Eventernote Autofill</h1>
-      <p>{copy.authInstruction}</p>
+      <p>{copy.landingSubtitle} {copy.authInstruction}</p>
       <label className="field field-wide"><span className="field-label">{copy.accessKey}</span>
         <input type="password" value={accessKeyInput} onChange={(event) => setAccessKeyInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void authenticate()} autoFocus />
       </label>

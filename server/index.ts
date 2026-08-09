@@ -92,6 +92,7 @@ function json(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'X-Robots-Tag': 'noindex, nofollow',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
@@ -334,8 +335,21 @@ async function serveStatic(pathname: string, response: ServerResponse): Promise<
     filePath = join(root, 'index.html')
     try { await stat(filePath) } catch { return false }
   }
-  const mime: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }
-  response.writeHead(200, { 'Content-Type': `${mime[extname(filePath)] ?? 'application/octet-stream'}; charset=utf-8`, 'X-Content-Type-Options': 'nosniff' })
+  const mime: Record<string, string> = {
+    '.css': 'text/css',
+    '.html': 'text/html',
+    '.ico': 'image/x-icon',
+    '.js': 'text/javascript',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.webmanifest': 'application/manifest+json',
+    '.xml': 'application/xml',
+  }
+  const extension = extname(filePath)
+  const type = mime[extension] ?? 'application/octet-stream'
+  const charset = ['.css', '.html', '.js', '.svg', '.txt', '.webmanifest', '.xml'].includes(extension) ? '; charset=utf-8' : ''
+  response.writeHead(200, { 'Content-Type': `${type}${charset}`, 'X-Content-Type-Options': 'nosniff' })
   createReadStream(filePath).pipe(response)
   return true
 }
