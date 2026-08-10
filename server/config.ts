@@ -1,5 +1,6 @@
 export interface ServerConfig {
   port: number
+  appTokenEnabled: boolean
   appToken?: string
   openAiApiKey?: string
   openAiBaseUrl: string
@@ -38,6 +39,7 @@ function secretValue(name: string, aliasName: string): string | undefined {
 export function loadConfig(): ServerConfig {
   return {
     port: positiveInteger('PORT', 8790),
+    appTokenEnabled: process.env.APP_TOKEN_ENABLED !== 'false',
     appToken: process.env.APP_TOKEN,
     openAiApiKey: secretValue('OPENAI_API_KEY', 'OPENAI_API_KEY_ENV'),
     openAiBaseUrl: httpsUrl('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

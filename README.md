@@ -36,7 +36,8 @@ For parser-only development, Eventernote credentials are optional. External writ
 
 ## Required production secrets
 
-- `APP_TOKEN`: long random key entered by workspace users; protects analysis, search, check, and submission APIs.
+- `APP_TOKEN_ENABLED`: controls whether API token authentication is active. It defaults to `true`; set it to `false` to allow access without an app token.
+- `APP_TOKEN`: long random key entered by workspace users; protects analysis, search, check, and submission APIs when `APP_TOKEN_ENABLED` is not `false`.
 - `EVENTERNOTE_USERNAME` / `EVENTERNOTE_PASSWORD`: dedicated Eventernote account, stored only in the server environment.
 - `OPENAI_API_KEY`: optional; enables web-assisted verification and enrichment on every analysis. The default extraction model is `gpt-5.6-luna` and can be changed with `OPENAI_MODEL`.
 - `OPENAI_API_KEY_ENV`: optional local/secret-manager alternative containing the name of another environment variable that holds the key. `OPENAI_API_KEY` takes precedence when both are set.

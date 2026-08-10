@@ -117,8 +117,12 @@ jobs:
             exit 1
           fi
 
-          if ! jq -e '(.Env // []) | any((.name // .Name) == "APP_TOKEN" and (((.value // .Value) // "") | length > 0))' "$stack_file" >/dev/null; then
-            echo "::error::APP_TOKEN is not configured in Portainer stack $PORTAINER_STACK_ID"
+          if ! jq -e '
+            (.Env // []) as $env
+            | (($env | map(select((.name // .Name) == "APP_TOKEN_ENABLED") | ((.value // .Value) // "")) | .[-1] // "true") == "false")
+              or ($env | any((.name // .Name) == "APP_TOKEN" and (((.value // .Value) // "") | length > 0)))
+          ' "$stack_file" >/dev/null; then
+            echo "::error::APP_TOKEN is not configured in Portainer stack $PORTAINER_STACK_ID while APP_TOKEN_ENABLED is enabled"
             exit 1
           fi
 

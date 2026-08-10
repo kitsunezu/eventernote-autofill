@@ -113,7 +113,7 @@ async function readJson(request: IncomingMessage, limit = 1_000_000): Promise<un
 }
 
 function authorized(request: IncomingMessage): boolean {
-  if (!config.appToken) return true
+  if (!config.appTokenEnabled || !config.appToken) return true
   const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? ''
   const expectedBuffer = Buffer.from(config.appToken)
   const suppliedBuffer = Buffer.from(supplied)
@@ -362,7 +362,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   }
   if (request.method === 'GET' && url.pathname === '/api/config') {
     json(response, 200, {
-      authRequired: Boolean(config.appToken),
+      authRequired: config.appTokenEnabled && Boolean(config.appToken),
       aiConfigured: Boolean(config.openAiApiKey),
       eventernoteConfigured: Boolean(config.eventernoteUsername && config.eventernotePassword),
       eventernoteWriteEnabled: config.eventernoteWriteEnabled,
