@@ -37,6 +37,16 @@ function similarity(left: string, right: string): number {
   return ag.size + bg.size ? (2 * intersection) / (ag.size + bg.size) : 0
 }
 
+function apiResultSimilarity(query: string, aliases: Array<string | undefined>): number {
+  const aliasScore = Math.max(0, ...aliases.flatMap((alias) => {
+    if (!alias) return []
+    return alias.split(/[,，]/).map((value) => similarity(query, value.trim()))
+  }))
+  // Eventernote's dedicated APIs also match aliases that are not exposed in their response.
+  // Keep those results visible, but below the threshold used for automatic selection.
+  return Math.max(0.25, aliasScore)
+}
+
 function idFromPath(path: string): string {
   return path.match(/\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
 }
@@ -198,13 +208,20 @@ export class EventernoteClient {
       })
       if (!response.ok) throw new Error(`Eventernote 搜尋失敗 (HTTP ${response.status})`)
       const payload = await response.json() as {
-        results?: Array<{ id?: string | number; name?: string; place_name?: string }>
+        results?: Array<{
+          id?: string | number
+          name?: string
+          place_name?: string
+          kana?: string
+          keyword?: string
+          address?: string
+        }>
       }
       return (payload.results ?? []).flatMap((item) => {
         const id = String(item.id ?? '')
         const name = String(kind === 'actor' ? item.name ?? '' : item.place_name ?? '').trim()
-        const score = similarity(query, name)
-        if (!id || !name || score < 0.25) return []
+        const score = apiResultSimilarity(query, [name, item.kana, item.keyword, item.address])
+        if (!id || !name) return []
         return [{ id, name, url: new URL(`${prefix}${encodeURIComponent(name)}/${id}`, this.origin).toString(), similarity: score }]
       })
     }

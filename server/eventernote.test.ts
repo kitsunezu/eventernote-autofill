@@ -406,6 +406,43 @@ describe('Eventernote entity search', () => {
     expect(fetchMock.mock.calls[0][0].toString()).toContain('/api/places/search?')
   })
 
+  it('keeps a place returned through an Eventernote alias without changing the search keyword', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      results: [{
+        id: 12020,
+        place_name: 'TACHIKAWA STAGE GARDEN',
+        address: '東京都立川市緑町3-3 N1 立川ステージガーデン',
+      }],
+      code: 200,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const client = new EventernoteClient('https://www.eventernote.com')
+    await expect(client.searchEntities('立川ステージガーデン', 'place')).resolves.toEqual([
+      expect.objectContaining({
+        id: '12020',
+        name: 'TACHIKAWA STAGE GARDEN',
+        similarity: 0.86,
+      }),
+    ])
+
+    const searchUrl = new URL(fetchMock.mock.calls[0][0].toString())
+    expect(searchUrl.pathname).toBe('/api/places/search')
+    expect(searchUrl.searchParams.get('keyword')).toBe('立川ステージガーデン')
+  })
+
+  it('uses Eventernote actor keywords as exact aliases', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      results: [{ id: 456, name: '佐藤空', kana: 'さとうそら', keyword: 'Sora Sato,さとうそら' }],
+      code: 200,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    const client = new EventernoteClient('https://www.eventernote.com')
+    await expect(client.searchEntities('Sora Sato', 'actor')).resolves.toEqual([
+      expect.objectContaining({ id: '456', name: '佐藤空', similarity: 1 }),
+    ])
+  })
+
   it('retries a transient connection failure for read-only searches', async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new TypeError('fetch failed'))
