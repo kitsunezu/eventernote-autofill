@@ -13,6 +13,7 @@ import {
 } from '../shared/submission.js'
 import { AnalysisJobs } from './analysis-jobs.js'
 import { extractEventsWithAi, resolveEventernoteEntities } from './ai.js'
+import { mapWithConcurrency } from './concurrency.js'
 import { loadConfig } from './config.js'
 import { EventernoteClient } from './eventernote.js'
 import { uploadEventImageAsJpeg } from './event-image.js'
@@ -29,6 +30,7 @@ const eventernote = new EventernoteClient(
   config.eventernotePassword,
 )
 const analyses = new AnalysisJobs()
+const AI_ENTITY_RESOLUTION_CONCURRENCY = 2
 const ACTOR_METADATA_RETRY_WARNING_PREFIX = 'AI 尚未完整補全新出演者'
 
 function setAnalysisStage(analysisId: string, stage: AnalysisStage): void {
@@ -164,7 +166,12 @@ function eventSeriesQuery(title: string): string {
   return series || title.trim()
 }
 
-async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
+interface ReviewCandidatePreparation {
+  review: ReviewEvent
+  candidateSearchWarnings: Set<string>
+}
+
+async function prepareReviewCandidates(review: ReviewEvent): Promise<ReviewCandidatePreparation> {
   const candidateSearchWarnings = new Set<string>()
   const safeCandidateSearch = async (name: string, kind: 'place' | 'actor') => {
     try {
@@ -209,6 +216,13 @@ async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
       value: `使用現有：${candidate.name}`, source: 'Eventernote 唯一同名出演者', confidence: 'high',
     }
   })
+  return { review, candidateSearchWarnings }
+}
+
+async function resolvePreparedReview(
+  preparation: ReviewCandidatePreparation,
+): Promise<ReviewEvent> {
+  const { review, candidateSearchWarnings } = preparation
   let resolutionWarning = ''
   if (config.openAiApiKey && candidateSearchWarnings.size === 0) {
     try {
@@ -223,7 +237,7 @@ async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
     }
   }
   if ((!config.openAiApiKey || resolutionWarning) && candidateSearchWarnings.size === 0) {
-    if (!review.data.place.selectedId && placeCandidates.length === 0) review.data.place.createNew = true
+    if (!review.data.place.selectedId && review.data.place.candidates.length === 0) review.data.place.createNew = true
     review.data.actors.forEach((actor) => {
       if (!actor.selectedId && actor.candidates.length === 0) actor.createNew = true
     })
@@ -234,6 +248,10 @@ async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
     ...requiredWarnings(review.data),
   ]
   return review
+}
+
+async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
+  return resolvePreparedReview(await prepareReviewCandidates(review))
 }
 
 async function executeSubmission(
@@ -503,8 +521,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         warnings: [...new Set(warnings)],
       }
     })
-    const preparedEvents: ReviewEvent[] = []
-    for (const event of events) preparedEvents.push(await prepareReview(event))
+    const candidatePreparations: ReviewCandidatePreparation[] = []
+    for (const event of events) candidatePreparations.push(await prepareReviewCandidates(event))
+    const preparedEvents = await mapWithConcurrency(
+      candidatePreparations,
+      AI_ENTITY_RESOLUTION_CONCURRENCY,
+      resolvePreparedReview,
+    )
         const result: AnalyzeResult = {
           events: preparedEvents,
           diagnostics: {
