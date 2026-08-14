@@ -238,6 +238,67 @@ describe('Eventernote duplicate detection', () => {
     expect(confirmationBody.get('commit')).toBe('登録する')
   })
 
+  it('submits the selected place prefecture through both event form steps', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email" method="post"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        return response(`<form action="/events/add/confirm" method="post">
+          <input name="event_name"><input type="hidden" name="actor_ids">
+          <select name="prefecture"><option value=""></option></select>
+          <select name="place_id"><option value=""></option></select>
+        </form>`, url)
+      }
+      if (url.includes('/api/places/search?')) {
+        return response(JSON.stringify({
+          results: [{ id: 425, place_name: '東京国際フォーラム ホールC', prefecture: 13 }],
+        }), url)
+      }
+      if (url.endsWith('/events/add/confirm')) {
+        return response(`<form action="/events/add" method="post">
+          <input type="hidden" name="authenticity_token" value="confirmation-token">
+          <input type="submit" name="commit" value="登録する">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/add') && init?.method === 'POST') {
+        return response('<a href="/events/780/">Sample Live</a>', 'https://www.eventernote.com/events/add/complete')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Sample Live', date: '2026-11-02', openTime: '', startTime: '19:00', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: {
+        name: '東京国際フォーラム ホールC', address: '東京都千代田区丸の内3丁目5番1号',
+        countryCode: 'JP', selectedId: '425', createNew: false, candidates: [],
+      },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '425', [])).resolves.toEqual({
+      id: '780', url: 'https://www.eventernote.com/events/780',
+    })
+    const initialBody = fetchMock.mock.calls.find(([input]) => (
+      input.toString().endsWith('/events/add/confirm')
+    ))?.[1]?.body as URLSearchParams
+    const confirmationBody = fetchMock.mock.calls.find(([input, init]) => (
+      input.toString().endsWith('/events/add') && init?.method === 'POST'
+    ))?.[1]?.body as URLSearchParams
+    expect(initialBody.get('prefecture')).toBe('13')
+    expect(initialBody.get('place_id')).toBe('425')
+    expect(confirmationBody.get('prefecture')).toBe('13')
+    expect(confirmationBody.get('place_id')).toBe('425')
+  })
+
   it('does not accept an ambiguous complete page with multiple event links', async () => {
     const response = (body: string, url: string) => {
       const result = new Response(body, { status: 200 })

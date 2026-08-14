@@ -361,11 +361,32 @@ export class EventernoteClient {
     }
   }
 
-  private preserveConfirmationEntityIds(confirmationBody: URLSearchParams, initialBody: URLSearchParams): void {
-    for (const name of ['actor_ids', 'place_id']) {
+  private preserveConfirmationEntityFields(confirmationBody: URLSearchParams, initialBody: URLSearchParams): void {
+    for (const name of ['actor_ids', 'prefecture', 'place_id']) {
       const value = initialBody.get(name)
       if (value !== null) confirmationBody.set(name, value)
     }
+  }
+
+  private async placePrefecture(placeId: string, placeName: string): Promise<string> {
+    const url = new URL('/api/places/search', this.origin)
+    url.searchParams.set('keyword', placeName)
+    const response = await fetchEventernoteRead(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1',
+        'Accept-Language': 'ja',
+        Accept: 'application/json',
+      },
+    })
+    if (!response.ok) throw new Error(`Eventernote 場所資料讀取失敗 (HTTP ${response.status})`)
+    const payload = await response.json() as {
+      results?: Array<{ id?: string | number; prefecture?: string | number }>
+    }
+    const prefecture = String(payload.results?.find((item) => String(item.id ?? '') === placeId)?.prefecture ?? '')
+    if (!/^\d+$/.test(prefecture)) {
+      throw new Error(`無法確認 Eventernote 場所「${placeName}」的都道府縣，活動尚未建立`)
+    }
+    return prefecture
   }
 
   private submissionForm(
@@ -477,7 +498,7 @@ export class EventernoteClient {
 
   private async submitForm(
     path: string,
-    configure: ($: cheerio.CheerioAPI, form: cheerio.Cheerio<AnyNode>, body: URLSearchParams) => void,
+    configure: ($: cheerio.CheerioAPI, form: cheerio.Cheerio<AnyNode>, body: URLSearchParams) => void | Promise<void>,
     entityPath: 'actors' | 'places' | 'events',
     expectedName = '',
   ): Promise<SubmittedEntity> {
@@ -516,7 +537,7 @@ export class EventernoteClient {
       const form = this.submissionForm($, page.url, entityPath)
       if (!form.length) throw new Error(`無法辨識 Eventernote ${entityPath} 新增表單`)
       const body = this.collectDefaults($, form)
-      configure($, form, body)
+      await configure($, form, body)
 
       stage = 'initial_post'
       let response = await this.postForm(form, page.url, body)
@@ -540,7 +561,7 @@ export class EventernoteClient {
       if (!confirmationForm.length) throw new Error(`無法辨識 Eventernote ${entityPath} 確認表單`)
       const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
       this.normalizeConfirmationTimes(confirmationBody, body)
-      this.preserveConfirmationEntityIds(confirmationBody, body)
+      this.preserveConfirmationEntityFields(confirmationBody, body)
       stage = 'confirmation_post'
       response = await this.postForm(confirmationForm, response.url, confirmationBody)
       lastResponse = response
@@ -589,9 +610,12 @@ export class EventernoteClient {
   }
 
   async createEvent(data: EventData, placeId: string, actorIds: string[]): Promise<SubmittedEntity> {
-    return this.submitForm('/events/add', ($, form, body) => {
+    return this.submitForm('/events/add', async ($, form, body) => {
       if (!this.assignExact(body, 'event_name', data.title)) {
         this.assignNamed(body, /\[name\]$|event_name|title/, data.title)
+      }
+      if (placeId && body.has('prefecture')) {
+        body.set('prefecture', await this.placePrefecture(placeId, data.place.name))
       }
       if (!this.assignExact(body, 'place_id', placeId)) {
         this.assignNamed(body, /place.*id|place_id/, placeId)
