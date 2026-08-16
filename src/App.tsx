@@ -730,8 +730,11 @@ function App() {
         setEditingFact('')
         setImageEditorOpen(false)
       }
+      const successMessage = result.progress.eventAction === 'existing'
+        ? copy.existingEventUsed
+        : result.progress.eventAction === 'updated' ? copy.existingEventUpdated : copy.eventCreated
       setNotice(result.completed
-        ? { type: 'ok', text: copy.eventCreated }
+        ? { type: 'ok', text: successMessage }
         : { type: 'error', text: result.error ?? copy.submissionIncomplete })
     } catch (error) { showError(error); setConfirmOpen(false) } finally { setBusy('') }
   }

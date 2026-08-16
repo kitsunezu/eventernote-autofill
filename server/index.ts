@@ -81,6 +81,7 @@ const EvidenceSchema = z.object({
 const SubmissionProgressSchema = z.object({
   eventId: z.string().regex(/^\d+$/).optional(),
   eventUrl: z.string().url().max(2_000).optional(),
+  eventAction: z.enum(['created', 'existing', 'updated']).optional(),
   imageAdded: z.boolean().optional(),
   completed: z.boolean().optional(),
 })
@@ -254,6 +255,10 @@ async function prepareReview(review: ReviewEvent): Promise<ReviewEvent> {
   return resolvePreparedReview(await prepareReviewCandidates(review))
 }
 
+function normalizedEntityName(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/[\s・･\-_.,，。()（）「」『』]/g, '')
+}
+
 async function executeSubmission(
   inputData: EventData,
   inputProgress: SubmissionProgress,
@@ -264,6 +269,33 @@ async function executeSubmission(
   const progress = structuredClone(inputProgress)
   const steps: SubmissionResult['steps'] = []
   try {
+    const existingEvent = !progress.eventId
+      ? await eventernote.findMatchingEvent(data).catch(() => undefined)
+      : undefined
+    if (existingEvent) {
+      progress.eventAction = 'existing'
+      if ((image || data.imageUrl) && existingEvent.hasImage) progress.imageAdded = true
+      if (!data.place.selectedId && existingEvent.place
+        && normalizedEntityName(existingEvent.place.name) === normalizedEntityName(data.place.name)) {
+        data.place.selectedId = existingEvent.place.id
+        data.place.createNew = false
+      }
+      const existingActorsByName = new Map(existingEvent.actors.map((actor) => [normalizedEntityName(actor.name), actor.id]))
+      for (const actor of data.actors) {
+        if (actor.selectedId) continue
+        const existingId = existingActorsByName.get(normalizedEntityName(actor.name))
+        if (!existingId) continue
+        actor.selectedId = existingId
+        actor.createNew = false
+      }
+      if (existingEvent.complete) {
+        steps.push({ label: `活動：${data.title}（既有資料完整）`, status: 'skipped', url: existingEvent.url })
+        progress.eventId = existingEvent.id
+        progress.eventUrl = existingEvent.url
+        progress.completed = true
+        return { data, progress, steps, completed: true }
+      }
+    }
     const actorsMissingMetadata = data.actors.filter((actor) => (
       actor.createNew && (!actor.reading || !actor.searchKeywords || !actor.sex)
     ))
@@ -303,7 +335,24 @@ async function executeSubmission(
       data.place.selectedId = created.id
       steps.push({ label: `場所：${data.place.name}`, status: 'completed', url: created.url })
     }
-    if (!progress.eventId) {
+    if (existingEvent) {
+      const needsEventUpdate = existingEvent.missingFields.some((field) => field !== '活動圖片')
+      if (needsEventUpdate) {
+        const updated = await eventernote.completeExistingEvent(
+          existingEvent.id,
+          data,
+          data.place.selectedId,
+          data.actors.map((actor) => actor.selectedId),
+        )
+        progress.eventUrl = updated.url
+        progress.eventAction = 'updated'
+        steps.push({ label: `活動：${data.title}（補完既有資料）`, status: 'completed', url: updated.url })
+      } else {
+        steps.push({ label: `活動：${data.title}（沿用既有活動）`, status: 'skipped', url: existingEvent.url })
+      }
+      progress.eventId = existingEvent.id
+      progress.eventUrl = existingEvent.url
+    } else if (!progress.eventId) {
       const created = await eventernote.createEvent(
         data,
         data.place.selectedId,
@@ -311,6 +360,7 @@ async function executeSubmission(
       )
       progress.eventId = created.id
       progress.eventUrl = created.url
+      progress.eventAction = 'created'
       steps.push({ label: `活動：${data.title}`, status: 'completed', url: created.url })
     } else {
       steps.push({ label: `活動：${data.title}`, status: 'skipped', url: progress.eventUrl })
@@ -327,6 +377,7 @@ async function executeSubmission(
         await uploadEventImageAsJpeg(eventernote, submittedEventId, { kind: 'remote', url: data.imageUrl })
       }
       progress.imageAdded = true
+      if (existingEvent) progress.eventAction = 'updated'
       steps.push({ label: '活動圖片', status: 'completed', url: progress.eventUrl })
     }
     progress.completed = true

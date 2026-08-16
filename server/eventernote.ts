@@ -6,10 +6,23 @@ import type { ActorData, EntityCandidate, EventData, PlaceData } from '../shared
 
 interface SubmittedEntity { id: string; url: string }
 
+export interface ExistingEventMatch extends SubmittedEntity {
+  actorIds: string[]
+  actors: Array<{ id: string; name: string }>
+  complete: boolean
+  hasImage: boolean
+  missingFields: string[]
+  place?: { id: string; name: string }
+}
+
 interface PostCreateForm {
   $: cheerio.CheerioAPI
   form: cheerio.Cheerio<AnyNode>
   pageUrl: string
+}
+
+interface ExistingEventForm extends PostCreateForm {
+  detailHtml: string
 }
 
 type SubmissionStage = 'login' | 'open_form' | 'initial_post' | 'initial_response' | 'confirmation_post' | 'confirmation_response'
@@ -352,6 +365,40 @@ export class EventernoteClient {
     if (body.has(`${prefix}[minute]`)) body.set(`${prefix}[minute]`, minute)
   }
 
+  private assignTimePartsIfMissing(
+    body: URLSearchParams,
+    prefix: 'open_time' | 'start_time' | 'end_time',
+    value: string,
+  ): void {
+    if (!value) return
+    const flat = body.get(prefix)?.trim() ?? ''
+    const hourKey = `${prefix}[hour]`
+    const minuteKey = `${prefix}[minute]`
+    const hour = body.get(hourKey)?.trim() ?? ''
+    const minute = body.get(minuteKey)?.trim() ?? ''
+    if (flat || hour || minute) return
+    const [nextHour, nextMinute] = value.split(':')
+    if (body.has(prefix)) body.set(prefix, value)
+    if (body.has(hourKey)) body.set(hourKey, nextHour)
+    if (body.has(minuteKey)) body.set(minuteKey, nextMinute)
+  }
+
+  private eventFormValue(body: URLSearchParams, exact: string, fallback: RegExp): string {
+    const exactValue = body.get(exact)
+    if (exactValue !== null) return exactValue.trim()
+    const key = [...body.keys()].find((name) => fallback.test(name))
+    return key ? (body.get(key) ?? '').trim() : ''
+  }
+
+  private eventFormTime(body: URLSearchParams, prefix: 'open_time' | 'start_time' | 'end_time'): string {
+    const flat = body.get(prefix)?.trim() ?? ''
+    if (/^\d{1,2}:\d{2}$/.test(flat)) {
+      const [hour, minute] = flat.split(':')
+      return `${hour.padStart(2, '0')}:${minute}`
+    }
+    return timeFormValue(body.get(`${prefix}[hour]`) ?? '', body.get(`${prefix}[minute]`) ?? '')
+  }
+
   private normalizeConfirmationTimes(confirmationBody: URLSearchParams, initialBody: URLSearchParams): void {
     for (const prefix of ['open_time', 'start_time', 'end_time'] as const) {
       if (!confirmationBody.has(prefix)) continue
@@ -443,6 +490,219 @@ export class EventernoteClient {
       : undefined
     if (duplicateMessage) return new Error(duplicateMessage)
     return new Error(errors ? `Eventernote 拒絕提交：${errors.slice(0, 300)}` : `Eventernote ${entityPath} 提交未成功`)
+  }
+
+  private async findExistingEventForm(eventId: string): Promise<ExistingEventForm> {
+    await this.login()
+    const detailUrl = new URL(`/events/${eventId}`, this.origin)
+    const detailResponse = await this.fetchWithCookies(detailUrl, { signal: AbortSignal.timeout(15_000) })
+    const detailHtml = await detailResponse.text()
+    if (!detailResponse.ok) throw new Error(`Eventernote 既有活動讀取失敗 (HTTP ${detailResponse.status})`)
+    const detail = cheerio.load(detailHtml)
+    const editLinks = detail('a[href]').toArray().filter((link) => {
+      const value = `${detail(link).text()} ${detail(link).attr('href') ?? ''}`
+      return /このイベントを編集|イベント.*編集|\/events\/\d+\/edit|edit/i.test(value)
+    })
+    const urls = [
+      ...editLinks.map((link) => new URL(detail(link).attr('href') ?? '', detailResponse.url).toString()),
+      new URL(`/events/${eventId}/edit`, this.origin).toString(),
+      detailResponse.url,
+    ]
+    for (const pageUrl of [...new Set(urls)]) {
+      const pageResponse = pageUrl === detailResponse.url
+        ? detailResponse
+        : await this.fetchWithCookies(pageUrl, { signal: AbortSignal.timeout(15_000) })
+      if (!pageResponse.ok) continue
+      const html = pageUrl === detailResponse.url ? detailHtml : await pageResponse.text()
+      const $ = cheerio.load(html)
+      const form = this.submissionForm($, pageUrl, 'events')
+      if (form.length && form.find('input[name="event_name"], input[name*="event_name"]').length) {
+        return { $, form, pageUrl, detailHtml }
+      }
+    }
+    throw new Error('無法辨識 Eventernote 既有活動編輯表單')
+  }
+
+  private existingEventValues(existing: ExistingEventForm): {
+    actorIds: string[]
+    actors: Array<{ id: string; name: string }>
+    date: string
+    description: string
+    endTime: string
+    hasImage: boolean
+    officialUrl: string
+    openTime: string
+    place?: { id: string; name: string }
+    startTime: string
+    title: string
+  } {
+    const body = this.collectDefaults(existing.$, existing.form)
+    const detail = cheerio.load(existing.detailHtml)
+    const actorMap = new Map<string, string>()
+    detail('a[href^="/actors/"]').each((_, link) => {
+      const id = idFromPath(detail(link).attr('href') ?? '')
+      const name = detail(link).text().replace(/\s+/g, ' ').trim()
+      if (id && name) actorMap.set(id, name)
+    })
+    const actorIds = [...new Set(body.getAll('actor_ids').flatMap((value) => value.split(',')).map((id) => id.trim()).filter(Boolean))]
+    const placeId = this.eventFormValue(body, 'place_id', /place.*id|place_id/)
+    const placeLink = detail('a[href^="/places/"]').toArray().find((link) => idFromPath(detail(link).attr('href') ?? '') === placeId)
+      ?? detail('a[href^="/places/"]').first().get(0)
+    const linkPlaceId = placeLink ? idFromPath(detail(placeLink).attr('href') ?? '') : ''
+    const placeName = placeLink ? detail(placeLink).text().replace(/\s+/g, ' ').trim() : ''
+    const year = body.get('date[year]')?.trim() ?? ''
+    const month = body.get('date[month]')?.trim() ?? ''
+    const day = body.get('date[day]')?.trim() ?? ''
+    const flatDate = body.get('date')?.trim() ?? ''
+    const date = year && month && day
+      ? `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+      : /^\d{4}-\d{2}-\d{2}$/.test(flatDate) ? flatDate : ''
+    const hasImage = detail('.event-image img, .event_image img, #event_image img, img[src*="event_images"], img[src*="images/events/"], img[src*="events/images"]')
+      .toArray().some((image) => !/no[_-]?image|placeholder/i.test(detail(image).attr('src') ?? ''))
+    return {
+      actorIds,
+      actors: [...actorMap].map(([id, name]) => ({ id, name })),
+      date,
+      description: this.eventFormValue(body, 'description', /description|note/),
+      endTime: this.eventFormTime(body, 'end_time'),
+      hasImage,
+      officialUrl: this.eventFormValue(body, 'link', /official.*url|source.*url|url/),
+      openTime: this.eventFormTime(body, 'open_time'),
+      place: placeId || linkPlaceId ? { id: placeId || linkPlaceId, name: placeName } : undefined,
+      startTime: this.eventFormTime(body, 'start_time'),
+      title: this.eventFormValue(body, 'event_name', /event_name|title/),
+    }
+  }
+
+  async findMatchingEvent(data: EventData): Promise<ExistingEventMatch | undefined> {
+    if (!data.title.trim()) return undefined
+    const url = new URL('/events/search', this.origin)
+    url.searchParams.set('keyword', data.title)
+    url.searchParams.set('__from', 'autofill-duplicate-check')
+    const [year, month, day] = data.date.split('-')
+    if (year && month && day) {
+      url.searchParams.set('year', integerFormValue(year))
+      url.searchParams.set('month', integerFormValue(month))
+      url.searchParams.set('day', integerFormValue(day))
+    }
+    const response = await fetchEventernoteRead(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1', 'Accept-Language': 'ja' },
+    })
+    if (!response.ok) throw new Error(`Eventernote 活動搜尋失敗 (HTTP ${response.status})`)
+    const $ = cheerio.load(await response.text())
+    const ids = new Set<string>()
+    $('a[href^="/events/"]').each((_, link) => {
+      const href = $(link).attr('href') ?? ''
+      const id = href.match(/^\/events\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
+      const name = $(link).text().replace(/\s+/g, ' ').trim()
+      if (id && normalize(name) === normalize(data.title)) ids.add(id)
+    })
+    const matches: ExistingEventMatch[] = []
+    for (const id of [...ids].slice(0, 8)) {
+      const existingForm = await this.findExistingEventForm(id)
+      const current = this.existingEventValues(existingForm)
+      if (normalize(current.title) !== normalize(data.title)) continue
+      if (current.date && data.date && current.date !== data.date) continue
+      if (current.startTime && data.startTime && current.startTime !== data.startTime) continue
+      if (current.place?.id && data.place.selectedId && current.place.id !== data.place.selectedId) continue
+      if ((!current.place?.id || !data.place.selectedId) && current.place?.name && data.place.name
+        && normalize(current.place.name) !== normalize(data.place.name)) continue
+      const missingFields: string[] = []
+      const missing = (label: string, incoming: string, present: string) => {
+        if (incoming.trim() && !present.trim()) missingFields.push(label)
+      }
+      missing('活動日期', data.date, current.date)
+      missing('開場時間', data.openTime, current.openTime)
+      missing('開演時間', data.startTime, current.startTime)
+      missing('結束時間', data.endTime, current.endTime)
+      missing('活動說明', data.description, current.description)
+      missing('官方連結', data.officialUrl, current.officialUrl)
+      if ((data.place.selectedId || data.place.name) && !current.place?.id && !current.place?.name) missingFields.push('場所')
+      const currentActorIds = new Set(current.actorIds)
+      const currentActorNames = new Set(current.actors.map((actor) => normalize(actor.name)))
+      for (const actor of data.actors) {
+        if ((actor.selectedId && currentActorIds.has(actor.selectedId)) || currentActorNames.has(normalize(actor.name))) continue
+        missingFields.push(`出演者：${actor.name}`)
+      }
+      if ((data.uploadedImage || data.imageUrl) && !current.hasImage) missingFields.push('活動圖片')
+      matches.push({
+        id,
+        url: new URL(`/events/${id}`, this.origin).toString(),
+        actorIds: current.actorIds,
+        actors: current.actors,
+        complete: missingFields.length === 0,
+        hasImage: current.hasImage,
+        missingFields,
+        place: current.place,
+      })
+    }
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  async completeExistingEvent(
+    eventId: string,
+    data: EventData,
+    placeId: string,
+    actorIds: string[],
+  ): Promise<SubmittedEntity> {
+    let stage: SubmissionStage = 'open_form'
+    let lastResponse: Response | undefined
+    try {
+      const existing = await this.findExistingEventForm(eventId)
+      const body = this.collectDefaults(existing.$, existing.form)
+      const setIfMissing = (exact: string, fallback: RegExp, value: string): void => {
+        if (!value || this.eventFormValue(body, exact, fallback)) return
+        if (!this.assignExact(body, exact, value)) this.assignNamed(body, fallback, value)
+      }
+      setIfMissing('event_name', /event_name|title/, data.title)
+      setIfMissing('place_id', /place.*id|place_id/, placeId)
+      setIfMissing('link', /official.*url|source.*url|url/, data.officialUrl)
+      setIfMissing('description', /description|note/, data.description)
+      const [year, month, day] = data.date.split('-')
+      if (!(body.get('date[year]') ?? '').trim()) this.assignExact(body, 'date[year]', integerFormValue(year))
+      if (!(body.get('date[month]') ?? '').trim()) this.assignExact(body, 'date[month]', integerFormValue(month))
+      if (!(body.get('date[day]') ?? '').trim()) this.assignExact(body, 'date[day]', integerFormValue(day))
+      this.assignTimePartsIfMissing(body, 'open_time', data.openTime)
+      this.assignTimePartsIfMissing(body, 'start_time', data.startTime)
+      this.assignTimePartsIfMissing(body, 'end_time', data.endTime)
+      const actorKey = body.has('actor_ids')
+        ? 'actor_ids'
+        : [...body.keys()].find((name) => /actor.*id|performer.*id/.test(name))
+      if (actorKey) {
+        const existingActorIds = body.getAll(actorKey).flatMap((value) => value.split(',')).map((id) => id.trim()).filter(Boolean)
+        body.set(actorKey, [...new Set([...existingActorIds, ...actorIds.filter(Boolean)])].join(','))
+      }
+      stage = 'initial_post'
+      let response = await this.postForm(existing.form, existing.pageUrl, body)
+      lastResponse = response
+      stage = 'initial_response'
+      let html = await response.text()
+      let responsePath = new URL(response.url).pathname
+      if (response.ok && responsePath === `/events/${eventId}`) {
+        return { id: eventId, url: new URL(`/events/${eventId}`, this.origin).toString() }
+      }
+      if (response.ok && /\/confirm\/?$/.test(responsePath)) {
+        const confirmationPage = cheerio.load(html)
+        const confirmationForm = this.submissionForm(confirmationPage, response.url, 'events')
+        if (!confirmationForm.length) throw new Error('無法辨識 Eventernote 活動修改確認表單')
+        const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
+        this.normalizeConfirmationTimes(confirmationBody, body)
+        this.preserveConfirmationEntityFields(confirmationBody, body)
+        stage = 'confirmation_post'
+        response = await this.postForm(confirmationForm, response.url, confirmationBody)
+        lastResponse = response
+        stage = 'confirmation_response'
+        html = await response.text()
+        responsePath = new URL(response.url).pathname
+      }
+      if (response.ok && (responsePath === `/events/${eventId}` || /\/complete\/?$/.test(responsePath))) {
+        return { id: eventId, url: new URL(`/events/${eventId}`, this.origin).toString() }
+      }
+      throw this.submissionError(html, 'events')
+    } catch (error) {
+      logSubmissionFailure({ entity: 'events', stage, response: lastResponse }, error)
+      throw error
+    }
   }
 
   private async findImageForm(eventId: string): Promise<PostCreateForm> {

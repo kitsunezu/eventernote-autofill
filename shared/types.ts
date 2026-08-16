@@ -67,6 +67,7 @@ export interface EventData {
 export interface SubmissionProgress {
   eventId?: string
   eventUrl?: string
+  eventAction?: 'created' | 'existing' | 'updated'
   imageAdded?: boolean
   completed?: boolean
 }

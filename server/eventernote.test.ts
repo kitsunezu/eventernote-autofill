@@ -552,3 +552,101 @@ describe('Eventernote entity search', () => {
     })])
   })
 })
+
+describe('Eventernote existing event reconciliation', () => {
+  const eventData = {
+    title: 'Sample Live', date: '2026-09-08', openTime: '18:30', startTime: '19:00', endTime: '21:00',
+    description: 'Source description', officialUrl: 'https://example.com/event', imageUrl: 'https://example.com/event.jpg',
+    descriptionLanguage: 'ja',
+    place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    actors: [{
+      name: 'Existing Artist', reading: '', searchKeywords: '', sex: '' as const,
+      selectedId: '11', createNew: false, candidates: [],
+    }],
+  } satisfies EventData
+
+  const response = (body: string, url: string, status = 200) => {
+    const result = new Response(body, { status })
+    Object.defineProperty(result, 'url', { value: url })
+    return result
+  }
+
+  const loginResponse = (url: string) => response(
+    '<form action="/login/email"><input name="email"><input name="password"></form>', url,
+  )
+
+  const detailHtml = (withImage: boolean) => `
+    <a href="/events/501/edit">このイベントを編集</a>
+    <a href="/places/example/10">Example Hall</a>
+    <a href="/actors/existing/11">Existing Artist</a>
+    ${withImage ? '<div class="event-image"><img src="/event_images/501.jpg"></div>' : ''}
+  `
+
+  const editForm = (options: { actorIds?: string; description?: string; link?: string; openTime?: string } = {}) => {
+    const [openHour = '', openMinute = ''] = (options.openTime ?? '18:30').split(':')
+    return `<form action="/events/501/edit/confirm" method="post">
+      <input name="event_name" value="Sample Live">
+      <input name="place_id" value="10">
+      <input name="actor_ids" value="${options.actorIds ?? '11'}">
+      <input name="date[year]" value="2026"><input name="date[month]" value="9"><input name="date[day]" value="8">
+      <input name="open_time[hour]" value="${openHour}"><input name="open_time[minute]" value="${openMinute}">
+      <input name="start_time[hour]" value="19"><input name="start_time[minute]" value="00">
+      <input name="end_time[hour]" value="21"><input name="end_time[minute]" value="00">
+      <textarea name="link">${options.link ?? 'https://example.com/event'}</textarea>
+      <textarea name="description">${options.description ?? 'Existing description'}</textarea>
+    </form>`
+  }
+
+  it('returns a unique matching event without writing when its data is complete', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response('<a href="/events/501">Sample Live</a>', url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) return response(detailHtml(true), url)
+      if (url.endsWith('/events/501/edit')) return response(editForm(), url)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toEqual(expect.objectContaining({
+      id: '501', complete: true, hasImage: true, missingFields: [],
+    }))
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET' || init.method === 'POST')).toBe(true)
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().includes('/events/501/edit/confirm'))).toHaveLength(0)
+  })
+
+  it('fills only missing fields and keeps existing event values', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) return response(detailHtml(false), url)
+      if (url.endsWith('/events/501/edit') && !init?.method) {
+        return response(editForm({ actorIds: '11', description: 'Keep this description', link: '', openTime: '' }), url)
+      }
+      if (url.endsWith('/events/501/edit/confirm')) {
+        return response(`<form action="/events/501/edit" method="post">
+          <input name="actor_ids"><input name="place_id"><input name="open_time">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/501/edit') && init?.method === 'POST') {
+        return response('', 'https://www.eventernote.com/events/501')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.completeExistingEvent('501', eventData, '10', ['11', '22'])).resolves.toEqual({
+      id: '501', url: 'https://www.eventernote.com/events/501',
+    })
+    const updateBody = fetchMock.mock.calls.find(([input]) => input.toString().endsWith('/events/501/edit/confirm'))?.[1]?.body as URLSearchParams
+    expect(updateBody.get('description')).toBe('Keep this description')
+    expect(updateBody.get('link')).toBe('https://example.com/event')
+    expect(updateBody.get('open_time[hour]')).toBe('18')
+    expect(updateBody.get('open_time[minute]')).toBe('30')
+    expect(updateBody.get('actor_ids')).toBe('11,22')
+  })
+})
