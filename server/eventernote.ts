@@ -217,6 +217,10 @@ export class EventernoteClient {
     const searchApi = async (): Promise<EntityCandidate[]> => {
       const url = new URL(kind === 'actor' ? '/api/actors/search' : '/api/places/search', this.origin)
       url.searchParams.set('keyword', query)
+      // Eventernote defaults to ten actor results, which can omit an exact name
+      // behind many partial matches (for example, `SEE`). Keep one request but
+      // widen its result set so existing actors are not offered as new entities.
+      if (kind === 'actor') url.searchParams.set('limit', '100')
       const response = await fetchEventernoteRead(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1',
@@ -488,8 +492,12 @@ export class EventernoteClient {
     entityPath: 'actors' | 'places' | 'events',
   ): Error {
     const result = cheerio.load(html)
-    const errors = result('.error, .errors, .alert-danger, .field_with_errors, #error_explanation')
+    let errors = result('.error, .errors, .alert-danger, .field_with_errors, #error_explanation')
       .text().replace(/\s+/g, ' ').trim()
+    const bodyText = result('body').text().replace(/\s+/g, ' ').trim()
+    if (!errors && /同じ名前の声優\/アーティストが登録されています/.test(bodyText)) {
+      errors = '同じ名前の声優/アーティストが登録されています'
+    }
     const duplicateMessage = entityPath === 'events'
       ? duplicateSubmissionMessage(html, this.origin, errors)
       : undefined
@@ -773,9 +781,8 @@ export class EventernoteClient {
   ): Promise<SubmittedEntity> {
     let stage: SubmissionStage = 'login'
     let lastResponse: Response | undefined
-    const identifyCreatedEntity = async (html: string): Promise<SubmittedEntity | undefined> => {
-      const fromPage = entityFromCompletePage(html, this.origin, entityPath, expectedName)
-      if (fromPage || !expectedName || entityPath === 'events') return fromPage
+    const findExactNamedEntity = async (): Promise<SubmittedEntity | undefined> => {
+      if (!expectedName || entityPath === 'events') return undefined
       const kind = entityPath === 'actors' ? 'actor' : 'place'
       const matches = await this.searchEntities(expectedName, kind).catch(() => [])
       const exact = new Map(matches
@@ -784,6 +791,10 @@ export class EventernoteClient {
       if (exact.size !== 1) return undefined
       const candidate = [...exact.values()][0]
       return { id: candidate.id, url: new URL(`/${entityPath}/${candidate.id}`, this.origin).toString() }
+    }
+    const identifyCreatedEntity = async (html: string): Promise<SubmittedEntity | undefined> => {
+      const fromPage = entityFromCompletePage(html, this.origin, entityPath, expectedName)
+      return fromPage ?? findExactNamedEntity()
     }
     try {
       await this.login()
@@ -828,6 +839,12 @@ export class EventernoteClient {
       const confirmationPage = cheerio.load(html)
       const confirmationForm = this.submissionForm(confirmationPage, response.url, entityPath)
       if (!confirmationForm.length) throw new Error(`無法辨識 Eventernote ${entityPath} 確認表單`)
+      const confirmationActionPath = this.formAction(confirmationForm, response.url).pathname
+      if (confirmationActionPath === `/${entityPath}/add/confirm`) {
+        const existing = await findExactNamedEntity()
+        if (existing) return existing
+        throw this.submissionError(html, entityPath)
+      }
       const confirmationBody = this.collectDefaults(confirmationPage, confirmationForm)
       this.normalizeConfirmationTimes(confirmationBody, body)
       this.preserveConfirmationEntityFields(confirmationBody, body)

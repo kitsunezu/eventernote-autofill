@@ -97,6 +97,45 @@ describe('Eventernote duplicate detection', () => {
     })).resolves.toEqual({ id: '94002', url: 'https://www.eventernote.com/actors/94002' })
   })
 
+  it('recovers an existing actor when Eventernote rejects the add form as a duplicate', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/actors/add') && (!init?.method || init.method === 'GET')) {
+        return response(`<form action="/actors/add/confirm" method="post">
+          <input name="name"><input name="kana"><input name="keyword"><input name="sex">
+        </form>`, url)
+      }
+      if (url.endsWith('/actors/add/confirm')) {
+        return response(`<p>同じ名前の声優/アーティストが登録されています</p>
+          <form action="/actors/add/confirm" method="post">
+            <input name="name" value="SEE"><input name="kana" value="しー">
+          </form>`, 'https://www.eventernote.com/actors/add/confirm')
+      }
+      if (url.includes('/api/actors/search')) {
+        return response(JSON.stringify({ results: [{ id: 77871, name: 'SEE', kana: 'しー' }] }), url)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.createActor({
+      name: 'SEE', reading: 'しー', searchKeywords: 'シー', sex: '3',
+      selectedId: '', createNew: true, candidates: [],
+    })).resolves.toEqual({ id: '77871', url: 'https://www.eventernote.com/actors/77871' })
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().endsWith('/actors/add/confirm'))).toHaveLength(1)
+    expect(new URL(fetchMock.mock.calls.at(-1)?.[0].toString() ?? '').searchParams.get('limit')).toBe('100')
+  })
+
   it('returns a useful error with existing event links', () => {
     const html = `<div class="alert-danger">同じイベントは既に登録済みです</div>
       <a href="/events/102">既存イベント</a>`
@@ -452,7 +491,9 @@ describe('Eventernote entity search', () => {
       url: 'https://www.eventernote.com/actors/%E3%82%80%E3%82%93%E3%82%82%E3%81%A3%E3%81%97%E3%82%85/79570',
       similarity: 1,
     }])
-    expect(fetchMock.mock.calls[0][0].toString()).toContain('/api/actors/search?')
+    const searchUrl = new URL(fetchMock.mock.calls[0][0].toString())
+    expect(searchUrl.pathname).toBe('/api/actors/search')
+    expect(searchUrl.searchParams.get('limit')).toBe('100')
   })
 
   it('uses the dedicated place search for venues', async () => {
