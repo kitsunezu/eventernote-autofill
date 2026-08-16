@@ -34,9 +34,11 @@ describe('Eventernote candidate API client', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await api.submit(data, { eventId: '99' })
+    await api.submit(data, { eventId: '99' }, undefined, '88')
 
     expect(fetchMock.mock.calls[0][0]).toBe('/api/submission')
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ data, progress: { eventId: '99' } })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      data, progress: { eventId: '99' }, existingEventId: '88',
+    })
   })
 })

@@ -617,6 +617,53 @@ describe('Eventernote existing event reconciliation', () => {
     expect(fetchMock.mock.calls.filter(([input]) => input.toString().includes('/events/501/edit/confirm'))).toHaveLength(0)
   })
 
+  it('finds the oldest Day 1 event across punctuation and venue-name differences', async () => {
+    const data = {
+      ...eventData,
+      title: '暴力的にカワイイ 2026 DAY.1',
+      date: '2026-09-26',
+      openTime: '12:00',
+      startTime: '12:00',
+      endTime: '20:30',
+      place: { ...eventData.place, name: 'お台場青海地区P区画', selectedId: '' },
+    }
+    const eventForm = (id: string, title: string) => `<form action="/events/${id}/edit/confirm" method="post">
+      <input name="event_name" value="${title}"><input name="place_id" value="2205"><input name="actor_ids" value="11">
+      <input name="date[year]" value="2026"><input name="date[month]" value="9"><input name="date[day]" value="26">
+      <input name="open_time[hour]" value="12"><input name="open_time[minute]" value="00">
+      <input name="start_time[hour]" value="12"><input name="start_time[minute]" value="00">
+      <input name="end_time[hour]" value="20"><input name="end_time[minute]" value="45">
+    </form>`
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response(`
+        <a href="/events/489442">暴力的にカワイイ 2026 DAY.1</a>
+        <a href="/events/483616">暴力的にカワイイ 2026 Day1</a>
+      `, url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      const id = url.match(/\/events\/(483616|489442)/)?.[1]
+      if (id && url.endsWith(`/events/${id}`)) return response(`
+        <a href="/events/${id}/edit">このイベントを編集</a>
+        <a href="/places/original/2205">お台場・青海特設会場</a>
+        <a href="/actors/existing/11">Existing Artist</a>
+      `, url)
+      if (id && url.endsWith(`/events/${id}/edit`)) {
+        return response(eventForm(id, id === '483616'
+          ? '暴力的にカワイイ 2026 Day1'
+          : '暴力的にカワイイ 2026 DAY.1'), url)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(data)).resolves.toEqual(expect.objectContaining({
+      id: '483616', url: 'https://www.eventernote.com/events/483616',
+    }))
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().includes('/events/search?'))).toHaveLength(2)
+  })
+
   it('fills only missing fields and keeps existing event values', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = input.toString()

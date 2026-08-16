@@ -6,7 +6,6 @@ import type { EventernoteClient } from './eventernote.js'
 import { safeFetchImage } from './safe-fetch.js'
 
 const MAX_UPLOAD_BYTES = 5_000_000
-const MAX_DIMENSION = 2_000
 
 type EventImageSource =
   | { kind: 'remote'; url: string }
@@ -18,13 +17,8 @@ async function convertToJpeg(sourcePath: string, jpegPath: string): Promise<void
   for (const quality of [90, 75, 60]) {
     await sharp(sourcePath, { limitInputPixels: 40_000_000 })
       .rotate()
-      .resize({
-        width: MAX_DIMENSION,
-        height: MAX_DIMENSION,
-        fit: 'inside',
-        withoutEnlargement: true,
-      })
-      .jpeg({ quality, progressive: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality, progressive: false })
       .toFile(jpegPath)
     if ((await stat(jpegPath)).size <= MAX_UPLOAD_BYTES) return
   }

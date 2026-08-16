@@ -5,7 +5,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize } from 'node:path'
 import { z } from 'zod'
 import type {
-  AnalysisStage, AnalyzeResult, EventData, ReviewEvent, SubmissionImage, SubmissionProgress, SubmissionResult,
+  AnalysisStage, AnalyzeResult, EventData, ExistingEventReference, ReviewEvent, SubmissionImage, SubmissionProgress,
+  SubmissionResult,
 } from '../shared/types.js'
 import { addHoursToTime } from '../shared/time.js'
 import {
@@ -15,7 +16,7 @@ import { AnalysisJobs } from './analysis-jobs.js'
 import { extractEventsWithAi, resolveEventernoteEntities } from './ai.js'
 import { mapWithConcurrency } from './concurrency.js'
 import { loadConfig } from './config.js'
-import { EventernoteClient } from './eventernote.js'
+import { EventernoteClient, type ExistingEventMatch } from './eventernote.js'
 import { uploadEventImageAsJpeg } from './event-image.js'
 import { loadImagePreview, validImageSignature } from './image-preview.js'
 import { classifySource, inferCountry, isOnlineOnlyEvent, languageForCountry } from './location.js'
@@ -259,10 +260,33 @@ function normalizedEntityName(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/[\s・･\-_.,，。()（）「」『』]/g, '')
 }
 
+function existingEventReference(match: ExistingEventMatch): ExistingEventReference {
+  return {
+    id: match.id,
+    url: match.url,
+    complete: match.complete,
+    missingFields: match.missingFields,
+  }
+}
+
+async function attachExistingEvent(review: ReviewEvent): Promise<ReviewEvent> {
+  if (!config.eventernoteUsername || !config.eventernotePassword) return review
+  try {
+    const match = await eventernote.findMatchingEvent(review.data)
+    return match ? { ...review, existingEvent: existingEventReference(match) } : review
+  } catch {
+    return {
+      ...review,
+      warnings: [...new Set([...review.warnings, '暫時無法檢查 Eventernote 重複活動；送出前會再次檢查'])],
+    }
+  }
+}
+
 async function executeSubmission(
   inputData: EventData,
   inputProgress: SubmissionProgress,
   image?: SubmissionImage,
+  expectedExistingEventId?: string,
 ): Promise<SubmissionResult> {
   if (!config.eventernoteWriteEnabled) throw new Error('EVENTERNOTE_WRITE_ENABLED 尚未設為 true')
   const data = structuredClone(inputData)
@@ -270,8 +294,13 @@ async function executeSubmission(
   const steps: SubmissionResult['steps'] = []
   try {
     const existingEvent = !progress.eventId
-      ? await eventernote.findMatchingEvent(data).catch(() => undefined)
+      ? expectedExistingEventId
+        ? await eventernote.matchExistingEvent(expectedExistingEventId, data)
+        : await eventernote.findMatchingEvent(data)
       : undefined
+    if (expectedExistingEventId && !existingEvent) {
+      throw new Error('草案中選定的 Eventernote 既有活動已不再符合目前內容，請返回重新檢查')
+    }
     if (existingEvent) {
       progress.eventAction = 'existing'
       if ((image || data.imageUrl) && existingEvent.hasImage) progress.imageAdded = true
@@ -579,8 +608,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       AI_ENTITY_RESOLUTION_CONCURRENCY,
       resolvePreparedReview,
     )
+    const reviewedEvents = await mapWithConcurrency(
+      preparedEvents,
+      AI_ENTITY_RESOLUTION_CONCURRENCY,
+      attachExistingEvent,
+    )
         const result: AnalyzeResult = {
-          events: preparedEvents,
+          events: reviewedEvents,
           diagnostics: {
             crawlerResult: {
               finalUrl,
@@ -632,11 +666,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     const blockingWarnings = review.warnings.filter((warning) => (
       !warning.startsWith('未設定出演者') && !warning.startsWith(ACTOR_METADATA_RETRY_WARNING_PREFIX)
     ))
+    const existingEvent = await eventernote.findMatchingEvent(review.data)
     json(response, 200, {
       data: review.data,
       evidence: review.evidence,
       warnings: review.warnings,
       ready: blockingWarnings.length === 0,
+      ...(existingEvent ? { existingEvent: existingEventReference(existingEvent) } : {}),
     })
     return
   }
@@ -645,6 +681,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       data: EventDataSchema,
       progress: SubmissionProgressSchema.optional(),
       image: SubmissionImageSchema.optional(),
+      existingEventId: z.string().regex(/^\d+$/).optional(),
     }).parse(await readJson(request, 8_000_000))
     const blockingWarnings = requiredWarnings(body.data).filter((warning) => (
       !warning.startsWith('未設定出演者') && !warning.startsWith(ACTOR_METADATA_RETRY_WARNING_PREFIX)
@@ -657,7 +694,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       json(response, 400, { error: '找不到瀏覽器中的上傳圖片，請重新選擇圖片' })
       return
     }
-    json(response, 200, await executeSubmission(body.data, body.progress ?? {}, body.image))
+    json(response, 200, await executeSubmission(body.data, body.progress ?? {}, body.image, body.existingEventId))
     return
   }
   if (url.pathname.startsWith('/api/')) {

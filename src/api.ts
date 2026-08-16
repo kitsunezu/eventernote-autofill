@@ -97,7 +97,7 @@ export const api = {
   imagePreview: (url: string, signal?: AbortSignal) => requestBlob('/api/image-preview', {
     method: 'POST', body: JSON.stringify({ url }), signal,
   }),
-  submit: (data: EventData, progress: SubmissionProgress, image?: SubmissionImage) => request<SubmissionResult>('/api/submission', {
-    method: 'POST', body: JSON.stringify({ data, progress, image }),
+  submit: (data: EventData, progress: SubmissionProgress, image?: SubmissionImage, existingEventId?: string) => request<SubmissionResult>('/api/submission', {
+    method: 'POST', body: JSON.stringify({ data, progress, image, existingEventId }),
   }),
 }

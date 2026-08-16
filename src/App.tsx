@@ -6,6 +6,7 @@ import {
 import type {
   ActorData, AnalysisStage, AnalyzeResult, AppConfig, EntityCandidate, EventData, Evidence, ReviewEvent, SubmissionImage,
 } from '../shared/types'
+import { actorSearchTargetsForEditing, removeActorConfirmation } from '../shared/entity-state'
 import { addHoursToTime } from '../shared/time'
 import { api, getAccessKey, setAccessKey, waitForAnalysis } from './api'
 import ProcessingCard from '@/components/ui/processing-card'
@@ -298,7 +299,7 @@ function App() {
   const actorSearchNames = editing?.actors.map((actor) => actor.name.trim()) ?? []
   const actorSearchKey = JSON.stringify(actorSearchNames)
   const shouldSearchPlace = Boolean(placeSearchName && placeSearchVisible && editing?.place.candidates.length === 0)
-  const actorSearchPayload = JSON.stringify(editing?.actors.flatMap((actor, index) => {
+  const actorSearchTargets = editing?.actors.flatMap((actor, index) => {
     const name = actorSearchNames[index]
     const key = actorEntityKey(index)
     const visible = editingEntity === key || (actor.createNew && !isNewConfirmed(key))
@@ -306,7 +307,10 @@ function App() {
     return name && visible && actor.candidates.length === 0
       ? [{ index, name }]
       : []
-  }) ?? [])
+  }) ?? []
+  const actorSearchPayload = JSON.stringify(actorSearchTargetsForEditing(
+    actorSearchTargets, activeId, editingEntity,
+  ))
   const needsEntityConfirmation = Boolean(editing && (
     (editing.place.createNew && !isNewConfirmed(placeEntityKey))
     || editing.actors.some((actor, index) => actor.createNew && !isNewConfirmed(actorEntityKey(index)))
@@ -486,7 +490,12 @@ function App() {
   }
 
   const update = <K extends keyof EventData>(key: K, value: EventData[K]) => {
-    updateActiveEvent((event) => ({ ...event, data: { ...event.data, [key]: value }, error: undefined }))
+    updateActiveEvent((event) => ({
+      ...event,
+      data: { ...event.data, [key]: value },
+      error: undefined,
+      existingEvent: key === 'title' || key === 'date' || key === 'startTime' ? undefined : event.existingEvent,
+    }))
   }
 
   const updateImageUrl = (value: string) => {
@@ -509,7 +518,7 @@ function App() {
         startTime: value,
         openTime: shouldUpdateOpenTime ? addHoursToTime(value, -1) : event.data.openTime,
         endTime: shouldUpdateEndTime ? addHoursToTime(value, 2) : event.data.endTime,
-      } }
+      }, existingEvent: undefined }
     })
   }
 
@@ -585,7 +594,7 @@ function App() {
         data: { ...event.data, actors: event.data.actors.filter((_, actorIndex) => actorIndex !== index) },
       }
     })
-    setConfirmedNewEntities((current) => current.filter((item) => !item.startsWith(`${activeId}:actor:`)))
+    setConfirmedNewEntities((current) => removeActorConfirmation(current, activeId, index))
     setEditingEntity('')
   }
 
@@ -622,6 +631,7 @@ function App() {
         data: checked.data,
         evidence: checked.evidence,
         warnings: checked.warnings,
+        existingEvent: checked.existingEvent,
         error: undefined,
       }))
       if (checked.ready) {
@@ -717,7 +727,9 @@ function App() {
       const image = submissionImage
         ? await imagePayload(submissionImage, activeImage?.name ?? 'preview-image', copy.readImageFailed)
         : undefined
-      const result = await api.submit(editing, activeEvent.submission ?? {}, image)
+      const result = await api.submit(
+        editing, activeEvent.submission ?? {}, image, activeEvent.existingEvent?.id,
+      )
       updateActiveEvent((event) => ({
         ...event,
         data: result.data,
@@ -819,9 +831,26 @@ function App() {
           {!activeEvent.submission?.completed && <button className="primary-button event-submit-button"
             disabled={Boolean(busy) || needsEntityConfirmation} onClick={() => void prepareForConfirmation()}>
             {busy === 'prepare' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
-            {needsEntityConfirmation ? copy.confirmNewItemsFirst : busy === 'prepare' ? copy.checking : copy.submit}
+            {needsEntityConfirmation
+              ? copy.confirmNewItemsFirst
+              : busy === 'prepare' ? copy.checking : activeEvent.existingEvent ? copy.updateExistingEvent : copy.submit}
           </button>}
         </header>
+
+        {activeEvent.existingEvent && <section className="existing-event-notice" aria-label={copy.existingEventFound}>
+          <AlertTriangle size={21} />
+          <div>
+            <strong>{copy.existingEventFound}</strong>
+            <p>{activeEvent.existingEvent.complete ? copy.existingEventWillUse : copy.existingEventWillUpdate}</p>
+            {!activeEvent.existingEvent.complete && activeEvent.existingEvent.missingFields.length > 0
+              && <details><summary>{interpolate(copy.existingEventMissingCount, {
+                count: activeEvent.existingEvent.missingFields.length,
+              })}</summary><ul>{activeEvent.existingEvent.missingFields.map((field) => <li key={field}>{field}</li>)}</ul></details>}
+            <a href={activeEvent.existingEvent.url} target="_blank" rel="noreferrer">
+              {copy.openExistingEvent} <ExternalLink size={14} />
+            </a>
+          </div>
+        </section>}
 
         {activeEvent.error && <section className="issues" aria-label={copy.submissionError}>
           <p className="submission-error"><AlertTriangle size={18} /><span><ErrorText text={activeEvent.error} copy={copy} /></span></p>
@@ -955,10 +984,15 @@ function App() {
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div className="confirm-heading">
           <span><CheckCircle2 size={22} /></span>
-          <div><h2 id="confirm-title">{copy.finalConfirmation}</h2><p>{copy.willWriteToEventernote}</p></div>
+          <div><h2 id="confirm-title">{copy.finalConfirmation}</h2><p>{activeEvent.existingEvent
+            ? copy.willUpdateExistingEvent
+            : copy.willWriteToEventernote}</p></div>
         </div>
         <dl className="confirm-summary">
           <div><dt>{copy.event}</dt><dd>{editing.title}</dd></div>
+          <div><dt>{copy.submissionAction}</dt><dd>{activeEvent.existingEvent
+            ? <a href={activeEvent.existingEvent.url} target="_blank" rel="noreferrer">{copy.updateExistingEvent}</a>
+            : copy.createNewEvent}</dd></div>
           <div><dt>{copy.dateTime}</dt><dd>{editing.date} {editing.startTime}</dd></div>
           <div><dt>{copy.place}</dt><dd>{editing.place.name} ({editing.place.selectedId ? copy.existingItem : copy.createNewItem})</dd></div>
           <div><dt>{copy.actor}</dt><dd>{editing.actors.map((actor) => `${actor.name} (${actor.selectedId ? copy.useExistingShort : copy.createNewItem})`).join(locale === 'en' ? ', ' : '、') || copy.notProvided}</dd></div>
@@ -971,7 +1005,8 @@ function App() {
         <div className="modal-actions">
           <button className="secondary-button" onClick={() => setConfirmOpen(false)}>{copy.backToEdit}</button>
           <button className="primary-button" disabled={Boolean(busy)} onClick={() => void execute()}>
-            {busy === 'execute' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}{busy === 'execute' ? copy.writing : copy.confirmWrite}
+            {busy === 'execute' ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}
+            {busy === 'execute' ? copy.writing : activeEvent.existingEvent ? copy.confirmUpdate : copy.confirmWrite}
           </button>
         </div>
       </section>

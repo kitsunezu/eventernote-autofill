@@ -124,6 +124,12 @@ a { color: var(--blue); }
 .event-heading h2 { max-width: 800px; margin: 8px 0 7px; font-size: 25px; line-height: 1.35; overflow-wrap: anywhere; }
 .event-heading a, .event-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; text-decoration: none; }
 .event-submit-button { flex: none; align-self: center; white-space: nowrap; }
+.existing-event-notice { display: flex; align-items: flex-start; gap: 12px; padding: 16px 38px; color: #ffe0a3; background: rgba(180, 119, 32, .12); border-bottom: 1px solid rgba(232, 175, 77, .26); }
+.existing-event-notice > svg { flex: none; margin-top: 2px; }
+.existing-event-notice div { display: grid; gap: 5px; }
+.existing-event-notice p, .existing-event-notice small { margin: 0; }
+.existing-event-notice details ul { margin: 6px 0 2px; padding-left: 20px; }
+.existing-event-notice a { display: inline-flex; align-items: center; gap: 5px; width: fit-content; color: #ffd080; }
 
 .issues { padding: 18px 38px; color: #ffb1aa; background: var(--red-soft); border-bottom: 1px solid rgba(239, 140, 130, .22); }
 .issues ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
@@ -308,7 +314,7 @@ a { color: var(--blue); }
   .results-nav { min-height: 50px; padding: 0 16px; }
   .session-tabs { padding: 0 16px 12px; }
   .session-tab { min-width: 136px; }
-  .notice, .event-heading, .issues, .ai-review { padding-left: 16px; padding-right: 16px; }
+  .notice, .event-heading, .existing-event-notice, .issues, .ai-review { padding-left: 16px; padding-right: 16px; }
   .event-heading { min-height: 112px; align-items: stretch; flex-direction: column; padding-top: 22px; padding-bottom: 22px; }
   .event-heading h2 { font-size: 22px; }
   .event-submit-button { width: 100%; }

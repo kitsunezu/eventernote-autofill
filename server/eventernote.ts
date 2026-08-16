@@ -2,11 +2,11 @@ import * as cheerio from 'cheerio'
 import makeFetchCookie from 'fetch-cookie'
 import { CookieJar } from 'tough-cookie'
 import type { AnyNode } from 'domhandler'
-import type { ActorData, EntityCandidate, EventData, PlaceData } from '../shared/types.js'
+import type { ActorData, EntityCandidate, EventData, ExistingEventReference, PlaceData } from '../shared/types.js'
 
 interface SubmittedEntity { id: string; url: string }
 
-export interface ExistingEventMatch extends SubmittedEntity {
+export interface ExistingEventMatch extends ExistingEventReference {
   actorIds: string[]
   actors: Array<{ id: string; name: string }>
   complete: boolean
@@ -35,6 +35,11 @@ interface SubmissionLogContext {
 
 function normalize(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/[\s・･\-_.,，。()（）「」『』]/g, '')
+}
+
+function eventSearchQueries(title: string): string[] {
+  const sessionPrefix = title.replace(/\s+(?:day|part|vol(?:ume)?)\s*[._-]?\s*\d+.*$/i, '').trim()
+  return [...new Set([title.trim(), sessionPrefix].filter(Boolean))]
 }
 
 function similarity(left: string, right: string): number {
@@ -574,69 +579,73 @@ export class EventernoteClient {
     }
   }
 
+  async matchExistingEvent(eventId: string, data: EventData): Promise<ExistingEventMatch | undefined> {
+    const existingForm = await this.findExistingEventForm(eventId)
+    const current = this.existingEventValues(existingForm)
+    if (normalize(current.title) !== normalize(data.title)) return undefined
+    if (current.date && data.date && current.date !== data.date) return undefined
+    if (current.startTime && data.startTime && current.startTime !== data.startTime) return undefined
+    const missingFields: string[] = []
+    const missing = (label: string, incoming: string, present: string) => {
+      if (incoming.trim() && !present.trim()) missingFields.push(label)
+    }
+    missing('活動日期', data.date, current.date)
+    missing('開場時間', data.openTime, current.openTime)
+    missing('開演時間', data.startTime, current.startTime)
+    missing('結束時間', data.endTime, current.endTime)
+    missing('活動說明', data.description, current.description)
+    missing('官方連結', data.officialUrl, current.officialUrl)
+    if ((data.place.selectedId || data.place.name) && !current.place?.id && !current.place?.name) missingFields.push('場所')
+    const currentActorIds = new Set(current.actorIds)
+    const currentActorNames = new Set(current.actors.map((actor) => normalize(actor.name)))
+    for (const actor of data.actors) {
+      if ((actor.selectedId && currentActorIds.has(actor.selectedId)) || currentActorNames.has(normalize(actor.name))) continue
+      missingFields.push(`出演者：${actor.name}`)
+    }
+    if ((data.uploadedImage || data.imageUrl) && !current.hasImage) missingFields.push('活動圖片')
+    return {
+      id: eventId,
+      url: new URL(`/events/${eventId}`, this.origin).toString(),
+      actorIds: current.actorIds,
+      actors: current.actors,
+      complete: missingFields.length === 0,
+      hasImage: current.hasImage,
+      missingFields,
+      place: current.place,
+    }
+  }
+
   async findMatchingEvent(data: EventData): Promise<ExistingEventMatch | undefined> {
     if (!data.title.trim()) return undefined
-    const url = new URL('/events/search', this.origin)
-    url.searchParams.set('keyword', data.title)
-    url.searchParams.set('__from', 'autofill-duplicate-check')
     const [year, month, day] = data.date.split('-')
-    if (year && month && day) {
-      url.searchParams.set('year', integerFormValue(year))
-      url.searchParams.set('month', integerFormValue(month))
-      url.searchParams.set('day', integerFormValue(day))
-    }
-    const response = await fetchEventernoteRead(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1', 'Accept-Language': 'ja' },
-    })
-    if (!response.ok) throw new Error(`Eventernote 活動搜尋失敗 (HTTP ${response.status})`)
-    const $ = cheerio.load(await response.text())
     const ids = new Set<string>()
-    $('a[href^="/events/"]').each((_, link) => {
-      const href = $(link).attr('href') ?? ''
-      const id = href.match(/^\/events\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
-      const name = $(link).text().replace(/\s+/g, ' ').trim()
-      if (id && normalize(name) === normalize(data.title)) ids.add(id)
-    })
-    const matches: ExistingEventMatch[] = []
-    for (const id of [...ids].slice(0, 8)) {
-      const existingForm = await this.findExistingEventForm(id)
-      const current = this.existingEventValues(existingForm)
-      if (normalize(current.title) !== normalize(data.title)) continue
-      if (current.date && data.date && current.date !== data.date) continue
-      if (current.startTime && data.startTime && current.startTime !== data.startTime) continue
-      if (current.place?.id && data.place.selectedId && current.place.id !== data.place.selectedId) continue
-      if ((!current.place?.id || !data.place.selectedId) && current.place?.name && data.place.name
-        && normalize(current.place.name) !== normalize(data.place.name)) continue
-      const missingFields: string[] = []
-      const missing = (label: string, incoming: string, present: string) => {
-        if (incoming.trim() && !present.trim()) missingFields.push(label)
+    for (const query of eventSearchQueries(data.title)) {
+      const url = new URL('/events/search', this.origin)
+      url.searchParams.set('keyword', query)
+      url.searchParams.set('__from', 'autofill-duplicate-check')
+      if (year && month && day) {
+        url.searchParams.set('year', integerFormValue(year))
+        url.searchParams.set('month', integerFormValue(month))
+        url.searchParams.set('day', integerFormValue(day))
       }
-      missing('活動日期', data.date, current.date)
-      missing('開場時間', data.openTime, current.openTime)
-      missing('開演時間', data.startTime, current.startTime)
-      missing('結束時間', data.endTime, current.endTime)
-      missing('活動說明', data.description, current.description)
-      missing('官方連結', data.officialUrl, current.officialUrl)
-      if ((data.place.selectedId || data.place.name) && !current.place?.id && !current.place?.name) missingFields.push('場所')
-      const currentActorIds = new Set(current.actorIds)
-      const currentActorNames = new Set(current.actors.map((actor) => normalize(actor.name)))
-      for (const actor of data.actors) {
-        if ((actor.selectedId && currentActorIds.has(actor.selectedId)) || currentActorNames.has(normalize(actor.name))) continue
-        missingFields.push(`出演者：${actor.name}`)
-      }
-      if ((data.uploadedImage || data.imageUrl) && !current.hasImage) missingFields.push('活動圖片')
-      matches.push({
-        id,
-        url: new URL(`/events/${id}`, this.origin).toString(),
-        actorIds: current.actorIds,
-        actors: current.actors,
-        complete: missingFields.length === 0,
-        hasImage: current.hasImage,
-        missingFields,
-        place: current.place,
+      const response = await fetchEventernoteRead(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1', 'Accept-Language': 'ja' },
+      })
+      if (!response.ok) throw new Error(`Eventernote 活動搜尋失敗 (HTTP ${response.status})`)
+      const $ = cheerio.load(await response.text())
+      $('a[href^="/events/"]').each((_, link) => {
+        const href = $(link).attr('href') ?? ''
+        const id = href.match(/^\/events\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
+        const name = $(link).text().replace(/\s+/g, ' ').trim()
+        if (id && normalize(name) === normalize(data.title)) ids.add(id)
       })
     }
-    return matches.length === 1 ? matches[0] : undefined
+    const matches: ExistingEventMatch[] = []
+    for (const id of [...ids].sort((left, right) => Number(left) - Number(right)).slice(0, 8)) {
+      const match = await this.matchExistingEvent(id, data)
+      if (match) matches.push(match)
+    }
+    return matches[0]
   }
 
   async completeExistingEvent(

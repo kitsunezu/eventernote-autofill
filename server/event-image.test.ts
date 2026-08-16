@@ -12,13 +12,13 @@ async function temporaryImageDirectories(): Promise<Set<string>> {
   return new Set(entries.filter((entry) => entry.startsWith('eventernote-autofill-')))
 }
 
-async function pngBytes(): Promise<Uint8Array> {
+async function pngBytes(width = 24, height = 16, alpha = 1): Promise<Uint8Array> {
   return sharp({
     create: {
-      width: 24,
-      height: 16,
-      channels: 3,
-      background: { r: 220, g: 80, b: 40 },
+      width,
+      height,
+      channels: 4,
+      background: { r: 220, g: 80, b: 40, alpha },
     },
   }).png().toBuffer()
 }
@@ -29,7 +29,7 @@ describe('Eventernote image preparation', () => {
   it('downloads a remote image, converts it to JPEG, uploads bytes, and removes temporary files', async () => {
     const before = await temporaryImageDirectories()
     vi.mocked(safeFetchImage).mockResolvedValue({
-      bytes: await pngBytes(),
+      bytes: await pngBytes(2_400, 1_350, 0),
       mimeType: 'image/png',
       finalUrl: 'https://images.example/poster.png',
     })
@@ -37,6 +37,16 @@ describe('Eventernote image preparation', () => {
       expect([...bytes.slice(0, 3)]).toEqual([0xff, 0xd8, 0xff])
       expect(mimeType).toBe('image/jpeg')
       expect(fileName).toBe('event.jpg')
+      const metadata = await sharp(bytes).metadata()
+      expect(metadata).toMatchObject({
+        width: 2_400,
+        height: 1_350,
+        format: 'jpeg',
+        hasAlpha: false,
+        isProgressive: false,
+      })
+      const stats = await sharp(bytes).stats()
+      expect(stats.channels.every((channel) => channel.min >= 250)).toBe(true)
       return 'https://www.eventernote.com/events/123/'
     })
 

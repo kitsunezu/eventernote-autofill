@@ -72,6 +72,13 @@ export interface SubmissionProgress {
   completed?: boolean
 }
 
+export interface ExistingEventReference {
+  id: string
+  url: string
+  complete: boolean
+  missingFields: string[]
+}
+
 export interface ReviewEvent {
   id: string
   sourceUrl: string
@@ -80,6 +87,7 @@ export interface ReviewEvent {
   data: EventData
   evidence: Partial<Record<string, Evidence>>
   warnings: string[]
+  existingEvent?: ExistingEventReference
   submission?: SubmissionProgress
   error?: string
 }
@@ -126,6 +134,7 @@ export interface SubmissionCheckResult {
   evidence: ReviewEvent['evidence']
   warnings: string[]
   ready: boolean
+  existingEvent?: ExistingEventReference
 }
 
 export interface SubmissionResult {
