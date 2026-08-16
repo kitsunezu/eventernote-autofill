@@ -325,6 +325,7 @@ export class EventernoteClient {
       const name = field.attr('name')
       if (!name || field.attr('disabled') !== undefined) return
       const type = field.attr('type')
+      if (type === 'file') return
       if ((type === 'checkbox' || type === 'radio') && field.attr('checked') === undefined) return
       body.append(name, field.val()?.toString() ?? '')
     })
@@ -478,10 +479,17 @@ export class EventernoteClient {
     pageUrl: string,
     body: URLSearchParams,
   ): Promise<Response> {
+    const multipart = (form.attr('enctype') ?? '').toLowerCase() === 'multipart/form-data'
+    const requestBody = multipart ? new FormData() : body
+    if (requestBody instanceof FormData) {
+      for (const [name, value] of body) requestBody.append(name, value)
+    }
     return this.fetchWithCookies(this.formAction(form, pageUrl), {
       method: (form.attr('method') ?? 'post').toUpperCase(),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': pageUrl },
-      body,
+      headers: multipart
+        ? { 'Referer': pageUrl }
+        : { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': pageUrl },
+      body: requestBody,
       redirect: 'follow',
       signal: AbortSignal.timeout(25_000),
     })

@@ -737,4 +737,33 @@ describe('Eventernote existing event reconciliation', () => {
     expect(updateBody.get('open_time[minute]')).toBe('30')
     expect(updateBody.get('actor_ids')).toBe('11,22')
   })
+
+  it('uses multipart for an existing event edit without sending an empty image field', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) return response(detailHtml(false), url)
+      if (url.endsWith('/events/501/edit') && !init?.method) {
+        return response(`<form action="/events/501/edit/complete" method="post" enctype="multipart/form-data">
+          <input name="event_name" value="Sample Live"><input name="place_id" value="10">
+          <input name="actor_ids" value="11"><input type="file" name="thumbnail_image">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/501/edit/complete')) return response('', 'https://www.eventernote.com/events/501')
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.completeExistingEvent('501', eventData, '10', ['11', '22'])).resolves.toEqual({
+      id: '501', url: 'https://www.eventernote.com/events/501',
+    })
+    const updateCall = fetchMock.mock.calls.find(([input]) => input.toString().endsWith('/events/501/edit/complete'))
+    const updateBody = updateCall?.[1]?.body
+    expect(updateBody).toBeInstanceOf(FormData)
+    expect((updateBody as FormData).get('actor_ids')).toBe('11,22')
+    expect((updateBody as FormData).has('thumbnail_image')).toBe(false)
+    expect(new Headers(updateCall?.[1]?.headers).has('Content-Type')).toBe(false)
+  })
 })
