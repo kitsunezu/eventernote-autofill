@@ -703,7 +703,8 @@ export class EventernoteClient {
       stage = 'initial_response'
       let html = await response.text()
       let responsePath = new URL(response.url).pathname
-      if (response.ok && responsePath === `/events/${eventId}`) {
+      const isEventDetailPath = (pathname: string): boolean => new RegExp(`^/events/${eventId}/?$`).test(pathname)
+      if (response.ok && isEventDetailPath(responsePath)) {
         return { id: eventId, url: new URL(`/events/${eventId}`, this.origin).toString() }
       }
       if (response.ok && /\/confirm\/?$/.test(responsePath)) {
@@ -720,7 +721,7 @@ export class EventernoteClient {
         html = await response.text()
         responsePath = new URL(response.url).pathname
       }
-      if (response.ok && (responsePath === `/events/${eventId}` || /\/complete\/?$/.test(responsePath))) {
+      if (response.ok && (isEventDetailPath(responsePath) || /\/complete\/?$/.test(responsePath))) {
         return { id: eventId, url: new URL(`/events/${eventId}`, this.origin).toString() }
       }
       throw this.submissionError(html, 'events')

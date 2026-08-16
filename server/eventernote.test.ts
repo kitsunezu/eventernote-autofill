@@ -750,7 +750,7 @@ describe('Eventernote existing event reconciliation', () => {
           <input name="actor_ids" value="11"><input type="file" name="thumbnail_image">
         </form>`, url)
       }
-      if (url.endsWith('/events/501/edit/complete')) return response('', 'https://www.eventernote.com/events/501')
+      if (url.endsWith('/events/501/edit/complete')) return response('', 'https://www.eventernote.com/events/501/')
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
