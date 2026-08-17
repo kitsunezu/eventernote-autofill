@@ -26,7 +26,7 @@ async function pngBytes(width = 24, height = 16, alpha = 1): Promise<Uint8Array>
 describe('Eventernote image preparation', () => {
   beforeEach(() => vi.mocked(safeFetchImage).mockReset())
 
-  it('downloads a remote image, converts it to JPEG, uploads bytes, and removes temporary files', async () => {
+  it('downloads a remote image, pads it to an Eventernote-ready square JPEG, uploads bytes, and removes temporary files', async () => {
     const before = await temporaryImageDirectories()
     vi.mocked(safeFetchImage).mockResolvedValue({
       bytes: await pngBytes(2_400, 1_350, 0),
@@ -39,14 +39,19 @@ describe('Eventernote image preparation', () => {
       expect(fileName).toBe('event.jpg')
       const metadata = await sharp(bytes).metadata()
       expect(metadata).toMatchObject({
-        width: 2_400,
-        height: 1_350,
+        width: 1_000,
+        height: 1_000,
         format: 'jpeg',
         hasAlpha: false,
         isProgressive: false,
       })
-      const stats = await sharp(bytes).stats()
-      expect(stats.channels.every((channel) => channel.min >= 250)).toBe(true)
+      const { data, info } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true })
+      const pixel = (x: number, y: number) => {
+        const offset = (y * info.width + x) * info.channels
+        return [...data.subarray(offset, offset + 3)]
+      }
+      expect(pixel(0, 0).every((channel) => channel <= 5)).toBe(true)
+      expect(pixel(500, 500).every((channel) => channel >= 250)).toBe(true)
       return 'https://www.eventernote.com/events/123/'
     })
 

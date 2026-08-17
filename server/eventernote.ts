@@ -426,24 +426,29 @@ export class EventernoteClient {
   }
 
   private async placePrefecture(placeId: string, placeName: string): Promise<string> {
-    const url = new URL('/api/places/search', this.origin)
-    url.searchParams.set('keyword', placeName)
-    const response = await fetchEventernoteRead(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1',
-        'Accept-Language': 'ja',
-        Accept: 'application/json',
-      },
-    })
-    if (!response.ok) throw new Error(`Eventernote 場所資料讀取失敗 (HTTP ${response.status})`)
-    const payload = await response.json() as {
-      results?: Array<{ id?: string | number; prefecture?: string | number }>
+    const compactNumberedName = placeName.replace(
+      /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])\s+(?=\d)/gu,
+      '$1',
+    )
+    const queries = [...new Set([placeName.trim(), compactNumberedName.trim()])].filter(Boolean)
+    for (const query of queries) {
+      const url = new URL('/api/places/search', this.origin)
+      url.searchParams.set('keyword', query)
+      const response = await fetchEventernoteRead(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 EventernoteAutofill/0.1',
+          'Accept-Language': 'ja',
+          Accept: 'application/json',
+        },
+      })
+      if (!response.ok) throw new Error(`Eventernote 場所資料讀取失敗 (HTTP ${response.status})`)
+      const payload = await response.json() as {
+        results?: Array<{ id?: string | number; prefecture?: string | number }>
+      }
+      const prefecture = String(payload.results?.find((item) => String(item.id ?? '') === placeId)?.prefecture ?? '')
+      if (/^\d+$/.test(prefecture)) return prefecture
     }
-    const prefecture = String(payload.results?.find((item) => String(item.id ?? '') === placeId)?.prefecture ?? '')
-    if (!/^\d+$/.test(prefecture)) {
-      throw new Error(`無法確認 Eventernote 場所「${placeName}」的都道府縣，活動尚未建立`)
-    }
-    return prefecture
+    throw new Error(`無法確認 Eventernote 場所「${placeName}」的都道府縣，活動尚未建立`)
   }
 
   private submissionForm(
@@ -680,6 +685,10 @@ export class EventernoteClient {
         if (!this.assignExact(body, exact, value)) this.assignNamed(body, fallback, value)
       }
       setIfMissing('event_name', /event_name|title/, data.title)
+      const existingPlaceId = this.eventFormValue(body, 'place_id', /place.*id|place_id/)
+      if (!existingPlaceId && placeId && body.has('prefecture')) {
+        body.set('prefecture', await this.placePrefecture(placeId, data.place.name))
+      }
       setIfMissing('place_id', /place.*id|place_id/, placeId)
       setIfMissing('link', /official.*url|source.*url|url/, data.officialUrl)
       setIfMissing('description', /description|note/, data.description)

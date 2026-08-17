@@ -338,6 +338,66 @@ describe('Eventernote duplicate detection', () => {
     expect(confirmationBody.get('place_id')).toBe('425')
   })
 
+  it('retries a selected place prefecture lookup without whitespace', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email" method="post"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        return response(`<form action="/events/add/confirm" method="post">
+          <input name="event_name"><select name="prefecture"><option value=""></option></select>
+          <select name="place_id"><option value=""></option></select>
+        </form>`, url)
+      }
+      if (url.includes('/api/places/search?')) {
+        const keyword = new URL(url).searchParams.get('keyword')
+        return response(JSON.stringify(keyword === '下北沢440(four forty)'
+          ? { results: [{ id: 1216, place_name: '下北沢440(four forty)', prefecture: 13 }] }
+          : { results: [] }), url)
+      }
+      if (url.endsWith('/events/add/confirm')) {
+        return response(`<form action="/events/add" method="post">
+          <input type="hidden" name="authenticity_token" value="confirmation-token">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/add') && init?.method === 'POST') {
+        return response('<a href="/events/781/">Ignition!!!</a>', 'https://www.eventernote.com/events/add/complete')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Ignition!!!', date: '2026-10-06', openTime: '19:00', startTime: '19:30', endTime: '21:00',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: {
+        name: '下北沢 440(four forty)', address: '', countryCode: 'JP',
+        selectedId: '1216', createNew: false, candidates: [],
+      },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '1216', [])).resolves.toEqual({
+      id: '781', url: 'https://www.eventernote.com/events/781',
+    })
+    const searchKeywords = fetchMock.mock.calls
+      .map(([input]) => new URL(input.toString()))
+      .filter((url) => url.pathname === '/api/places/search')
+      .map((url) => url.searchParams.get('keyword'))
+    expect(searchKeywords).toEqual(['下北沢 440(four forty)', '下北沢440(four forty)'])
+    const confirmationBody = fetchMock.mock.calls.find(([input, init]) => (
+      input.toString().endsWith('/events/add') && init?.method === 'POST'
+    ))?.[1]?.body as URLSearchParams
+    expect(confirmationBody.get('prefecture')).toBe('13')
+    expect(confirmationBody.get('place_id')).toBe('1216')
+  })
+
   it('does not accept an ambiguous complete page with multiple event links', async () => {
     const response = (body: string, url: string) => {
       const result = new Response(body, { status: 200 })
@@ -736,6 +796,54 @@ describe('Eventernote existing event reconciliation', () => {
     expect(updateBody.get('open_time[hour]')).toBe('18')
     expect(updateBody.get('open_time[minute]')).toBe('30')
     expect(updateBody.get('actor_ids')).toBe('11,22')
+  })
+
+  it('fills a missing existing-event venue with its prefecture through both form steps', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) {
+        return response('<a href="/events/501/edit">このイベントを編集</a>', url)
+      }
+      if (url.endsWith('/events/501/edit') && !init?.method) {
+        return response(`<form action="/events/501/edit/confirm" method="post">
+          <input name="event_name" value="Sample Live"><input name="actor_ids" value="11">
+          <select name="prefecture"><option value=""></option></select>
+          <select name="place_id"><option value=""></option></select>
+        </form>`, url)
+      }
+      if (url.includes('/api/places/search?')) {
+        return response(JSON.stringify({
+          results: [{ id: 10, place_name: 'Example Hall', prefecture: 13 }],
+        }), url)
+      }
+      if (url.endsWith('/events/501/edit/confirm')) {
+        return response(`<form action="/events/501/edit" method="post">
+          <input type="hidden" name="authenticity_token" value="confirmation-token">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/501/edit') && init?.method === 'POST') {
+        return response('', 'https://www.eventernote.com/events/501')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.completeExistingEvent('501', eventData, '10', ['11'])).resolves.toEqual({
+      id: '501', url: 'https://www.eventernote.com/events/501',
+    })
+    const updateBody = fetchMock.mock.calls.find(([input]) => (
+      input.toString().endsWith('/events/501/edit/confirm')
+    ))?.[1]?.body as URLSearchParams
+    const confirmationBody = fetchMock.mock.calls.find(([input, init]) => (
+      input.toString().endsWith('/events/501/edit') && init?.method === 'POST'
+    ))?.[1]?.body as URLSearchParams
+    expect(updateBody.get('prefecture')).toBe('13')
+    expect(updateBody.get('place_id')).toBe('10')
+    expect(confirmationBody.get('prefecture')).toBe('13')
+    expect(confirmationBody.get('place_id')).toBe('10')
   })
 
   it('uses multipart for an existing event edit without sending an empty image field', async () => {

@@ -722,8 +722,8 @@ function App() {
     setBusy('execute')
     setNotice(null)
     try {
-      let submissionImage: Blob | undefined = activeImage ?? previewImages.current[activeEvent.id]
-      if (!submissionImage && editing.imageUrl) submissionImage = await api.imagePreview(editing.imageUrl)
+      const submissionImage: Blob | undefined = activeImage ?? previewImages.current[activeEvent.id]
+      if (!submissionImage && editing.imageUrl) throw new Error(copy.imagePreviewNotReady)
       const image = submissionImage
         ? await imagePayload(submissionImage, activeImage?.name ?? 'preview-image', copy.readImageFailed)
         : undefined
