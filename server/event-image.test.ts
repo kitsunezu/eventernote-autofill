@@ -23,10 +23,21 @@ async function pngBytes(width = 24, height = 16, alpha = 1): Promise<Uint8Array>
   }).png().toBuffer()
 }
 
+async function avifBytes(width: number, height: number): Promise<Uint8Array> {
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: 220, g: 80, b: 40 },
+    },
+  }).avif().toBuffer()
+}
+
 describe('Eventernote image preparation', () => {
   beforeEach(() => vi.mocked(safeFetchImage).mockReset())
 
-  it('downloads a remote image, pads it to an Eventernote-ready square JPEG, uploads bytes, and removes temporary files', async () => {
+  it('downloads a remote image, preserves its dimensions, converts it to JPEG, and removes temporary files', async () => {
     const before = await temporaryImageDirectories()
     vi.mocked(safeFetchImage).mockResolvedValue({
       bytes: await pngBytes(2_400, 1_350, 0),
@@ -39,19 +50,14 @@ describe('Eventernote image preparation', () => {
       expect(fileName).toBe('event.jpg')
       const metadata = await sharp(bytes).metadata()
       expect(metadata).toMatchObject({
-        width: 1_000,
-        height: 1_000,
+        width: 2_400,
+        height: 1_350,
         format: 'jpeg',
         hasAlpha: false,
         isProgressive: false,
       })
-      const { data, info } = await sharp(bytes).raw().toBuffer({ resolveWithObject: true })
-      const pixel = (x: number, y: number) => {
-        const offset = (y * info.width + x) * info.channels
-        return [...data.subarray(offset, offset + 3)]
-      }
-      expect(pixel(0, 0).every((channel) => channel <= 5)).toBe(true)
-      expect(pixel(500, 500).every((channel) => channel >= 250)).toBe(true)
+      const stats = await sharp(bytes).stats()
+      expect(stats.channels.every((channel) => channel.min >= 250)).toBe(true)
       return 'https://www.eventernote.com/events/123/'
     })
 
@@ -77,5 +83,26 @@ describe('Eventernote image preparation', () => {
     )).rejects.toThrow('upload rejected')
 
     expect(await temporaryImageDirectories()).toEqual(before)
+  })
+
+  it('preserves portrait AVIF dimensions without adding black padding', async () => {
+    const addEventImage = vi.fn(async (_eventId: string, bytes: Uint8Array) => {
+      const metadata = await sharp(bytes).metadata()
+      expect(metadata).toMatchObject({
+        width: 308,
+        height: 500,
+        format: 'jpeg',
+        isProgressive: false,
+      })
+      const stats = await sharp(bytes).stats()
+      expect(stats.channels[0].min).toBeGreaterThan(150)
+      return 'https://www.eventernote.com/events/123/'
+    })
+
+    await uploadEventImageAsJpeg(
+      { addEventImage },
+      '123',
+      { kind: 'uploaded', bytes: await avifBytes(308, 500) },
+    )
   })
 })
