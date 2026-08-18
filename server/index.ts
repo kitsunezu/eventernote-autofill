@@ -84,6 +84,7 @@ const SubmissionProgressSchema = z.object({
   eventUrl: z.string().url().max(2_000).optional(),
   eventAction: z.enum(['created', 'existing', 'updated']).optional(),
   imageAdded: z.boolean().optional(),
+  attendanceAdded: z.boolean().optional(),
   completed: z.boolean().optional(),
 })
 const SubmissionImageSchema = z.object({
@@ -321,6 +322,15 @@ async function executeSubmission(
         steps.push({ label: `活動：${data.title}（既有資料完整）`, status: 'skipped', url: existingEvent.url })
         progress.eventId = existingEvent.id
         progress.eventUrl = existingEvent.url
+        if (!progress.attendanceAdded) {
+          const attendance = await eventernote.attendEvent(existingEvent.id)
+          progress.attendanceAdded = true
+          steps.push({
+            label: 'Autofill 帳號參加活動',
+            status: attendance.created ? 'completed' : 'skipped',
+            url: attendance.url,
+          })
+        }
         progress.completed = true
         return { data, progress, steps, completed: true }
       }
@@ -408,6 +418,15 @@ async function executeSubmission(
       progress.imageAdded = true
       if (existingEvent) progress.eventAction = 'updated'
       steps.push({ label: '活動圖片', status: 'completed', url: progress.eventUrl })
+    }
+    if (!progress.attendanceAdded) {
+      const attendance = await eventernote.attendEvent(submittedEventId)
+      progress.attendanceAdded = true
+      steps.push({
+        label: 'Autofill 帳號參加活動',
+        status: attendance.created ? 'completed' : 'skipped',
+        url: attendance.url,
+      })
     }
     progress.completed = true
     return { data, progress, steps, completed: true }

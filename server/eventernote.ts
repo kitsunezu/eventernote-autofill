@@ -6,6 +6,12 @@ import type { ActorData, EntityCandidate, EventData, ExistingEventReference, Pla
 
 interface SubmittedEntity { id: string; url: string }
 
+interface SubmittedAttendance {
+  created: boolean
+  noteId: string
+  url: string
+}
+
 export interface ExistingEventMatch extends ExistingEventReference {
   actorIds: string[]
   actors: Array<{ id: string; name: string }>
@@ -41,6 +47,8 @@ function eventSearchQueries(title: string): string[] {
   const sessionPrefix = title.replace(/\s+(?:day|part|vol(?:ume)?)\s*[._-]?\s*\d+.*$/i, '').trim()
   return [...new Set([title.trim(), sessionPrefix].filter(Boolean))]
 }
+
+const SIMILAR_EVENT_TITLE_THRESHOLD = 0.6
 
 function similarity(left: string, right: string): number {
   const a = normalize(left)
@@ -603,7 +611,23 @@ export class EventernoteClient {
   async matchExistingEvent(eventId: string, data: EventData): Promise<ExistingEventMatch | undefined> {
     const existingForm = await this.findExistingEventForm(eventId)
     const current = this.existingEventValues(existingForm)
-    if (normalize(current.title) !== normalize(data.title)) return undefined
+    const exactTitle = normalize(current.title) === normalize(data.title)
+    const sameDateAndTime = Boolean(
+      current.date && data.date && current.date === data.date
+      && current.startTime && data.startTime && current.startTime === data.startTime,
+    )
+    const samePlace = Boolean(
+      current.place
+      && (
+        (data.place.selectedId && current.place.id === data.place.selectedId)
+        || (!data.place.selectedId && normalize(current.place.name) === normalize(data.place.name))
+      ),
+    )
+    if (!exactTitle && !(
+      similarity(current.title, data.title) >= SIMILAR_EVENT_TITLE_THRESHOLD
+      && sameDateAndTime
+      && samePlace
+    )) return undefined
     if (current.date && data.date && current.date !== data.date) return undefined
     if (current.startTime && data.startTime && current.startTime !== data.startTime) return undefined
     const missingFields: string[] = []
@@ -639,8 +663,9 @@ export class EventernoteClient {
   async findMatchingEvent(data: EventData): Promise<ExistingEventMatch | undefined> {
     if (!data.title.trim()) return undefined
     const [year, month, day] = data.date.split('-')
-    const ids = new Set<string>()
-    for (const query of eventSearchQueries(data.title)) {
+    const candidates = new Map<string, number>()
+    const queries = [...new Set([...eventSearchQueries(data.title), data.place.name.trim()].filter(Boolean))]
+    for (const query of queries) {
       const url = new URL('/events/search', this.origin)
       url.searchParams.set('keyword', query)
       url.searchParams.set('__from', 'autofill-duplicate-check')
@@ -658,15 +683,26 @@ export class EventernoteClient {
         const href = $(link).attr('href') ?? ''
         const id = href.match(/^\/events\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
         const name = $(link).text().replace(/\s+/g, ' ').trim()
-        if (id && normalize(name) === normalize(data.title)) ids.add(id)
+        const score = similarity(name, data.title)
+        if (id && score >= SIMILAR_EVENT_TITLE_THRESHOLD) {
+          candidates.set(id, Math.max(score, candidates.get(id) ?? 0))
+        }
       })
     }
-    const matches: ExistingEventMatch[] = []
-    for (const id of [...ids].sort((left, right) => Number(left) - Number(right)).slice(0, 8)) {
+    const matches: Array<{ match: ExistingEventMatch; score: number }> = []
+    const rankedCandidates = [...candidates]
+      .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || Number(leftId) - Number(rightId))
+      .slice(0, 12)
+    for (const [id, score] of rankedCandidates) {
       const match = await this.matchExistingEvent(id, data)
-      if (match) matches.push(match)
+      if (match) matches.push({ match, score })
     }
-    return matches[0]
+    const exactMatches = matches.filter(({ score }) => score === 1)
+      .sort(({ match: left }, { match: right }) => Number(left.id) - Number(right.id))
+    if (exactMatches.length) return exactMatches[0].match
+    const [best, runnerUp] = matches.sort((left, right) => right.score - left.score)
+    if (!best || (runnerUp && best.score - runnerUp.score < 0.08)) return undefined
+    return best.match
   }
 
   async completeExistingEvent(
@@ -740,12 +776,16 @@ export class EventernoteClient {
     }
   }
 
-  private async findImageForm(eventId: string): Promise<PostCreateForm> {
+  private async findImageForm(eventId: string): Promise<PostCreateForm & { placeId: string }> {
     await this.login()
     const detailUrl = new URL(`/events/${eventId}`, this.origin)
     const detailResponse = await this.fetchWithCookies(detailUrl, { signal: AbortSignal.timeout(15_000) })
     const detailHtml = await detailResponse.text()
     const detail = cheerio.load(detailHtml)
+    const placeLink = detail('.gb_events_info_table a[href^="/places/"]').toArray()
+      .find((link) => idFromPath(detail(link).attr('href') ?? ''))
+      ?? detail('a[href^="/places/"]').toArray().find((link) => idFromPath(detail(link).attr('href') ?? ''))
+    const placeId = placeLink ? idFromPath(detail(placeLink).attr('href') ?? '') : ''
     const specificText = /画像|写真|イメージ|image|photo/i
     const editText = /このイベントを編集|イベント.*編集|edit/i
     const links = detail('a[href]').toArray()
@@ -760,14 +800,14 @@ export class EventernoteClient {
       const forms = $('form').toArray()
       for (const formNode of forms) {
         const form = $(formNode)
-        if (form.find('input[type="file"]').length) return { $, form, pageUrl }
+        if (form.find('input[type="file"]').length) return { $, form, pageUrl, placeId }
       }
     }
     throw new Error('Eventernote 活動已建立，但找不到圖片新增表單；請在活動頁手動補上')
   }
 
   async addEventImage(eventId: string, bytes: Uint8Array, mimeType: string, fileName: string): Promise<string> {
-    const { $, form, pageUrl } = await this.findImageForm(eventId)
+    const { $, form, pageUrl, placeId } = await this.findImageForm(eventId)
     const fileField = form.find('input[type="file"][name]').first()
     const fileFieldName = fileField.attr('name')
     if (!fileFieldName) throw new Error('Eventernote 活動已建立，但無法辨識圖片上傳欄位')
@@ -777,6 +817,9 @@ export class EventernoteClient {
       const name = field.attr('name')
       if (name) body.append(name, field.val()?.toString() ?? '')
     })
+    // Eventernote fills the venue select with JavaScript after the edit page loads,
+    // so the server-rendered form contains an empty place_id even for an existing venue.
+    if (placeId) body.set('place_id', placeId)
     body.append(fileFieldName, new Blob([bytes], { type: mimeType }), fileName)
     const response = await this.fetchWithCookies(new URL(form.attr('action') ?? pageUrl, this.origin), {
       method: (form.attr('method') ?? 'post').toUpperCase(),
@@ -789,6 +832,48 @@ export class EventernoteClient {
     const errors = cheerio.load(html)('.error, .errors, .alert-danger, .field_with_errors').text().replace(/\s+/g, ' ').trim()
     if (!response.ok || errors) throw new Error(errors ? `Eventernote 圖片上傳失敗：${errors.slice(0, 300)}` : 'Eventernote 圖片上傳失敗')
     return response.url
+  }
+
+  async attendEvent(eventId: string): Promise<SubmittedAttendance> {
+    await this.login()
+    const eventUrl = new URL(`/events/${eventId}`, this.origin)
+    const page = await this.fetchWithCookies(eventUrl, { signal: AbortSignal.timeout(15_000) })
+    const html = await page.text()
+    if (!page.ok) throw new Error(`Eventernote 活動參加狀態讀取失敗 (HTTP ${page.status})`)
+    const $ = cheerio.load(html)
+    const existingNoteHref = $('a[href^="/notes/"][href$="/edit"]').first().attr('href')
+    const existingNoteId = existingNoteHref?.match(/^\/notes\/(\d+)\/edit(?:[/?#]|$)/)?.[1]
+    if (existingNoteId) {
+      return {
+        created: false,
+        noteId: existingNoteId,
+        url: new URL(`/notes/${existingNoteId}/edit`, this.origin).toString(),
+      }
+    }
+    const crumb = $('meta[name="crumb"]').attr('content')?.trim() ?? ''
+    if (!crumb) throw new Error('Eventernote 活動已建立，但無法取得參加活動所需的驗證資訊')
+    const addUrl = new URL('/api/notes/add', this.origin)
+    addUrl.searchParams.set('event_id', eventId)
+    addUrl.searchParams.set('crumb', crumb)
+    const response = await this.fetchWithCookies(addUrl, {
+      headers: { Accept: 'application/json', Referer: page.url || eventUrl.toString() },
+      signal: AbortSignal.timeout(15_000),
+    })
+    let payload: { code?: number; results?: { note_id?: string | number } } = {}
+    try {
+      payload = JSON.parse(await response.text()) as typeof payload
+    } catch {
+      throw new Error(`Eventernote 活動已建立，但參加活動未成功 (HTTP ${response.status})`)
+    }
+    const noteId = String(payload.results?.note_id ?? '')
+    if (!response.ok || payload.code !== 200 || !/^\d+$/.test(noteId)) {
+      throw new Error(`Eventernote 活動已建立，但參加活動未成功 (HTTP ${response.status})`)
+    }
+    return {
+      created: true,
+      noteId,
+      url: new URL(`/notes/${noteId}/edit`, this.origin).toString(),
+    }
   }
 
   private async submitForm(

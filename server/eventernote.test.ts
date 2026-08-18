@@ -762,7 +762,95 @@ describe('Eventernote existing event reconciliation', () => {
     await expect(client.findMatchingEvent(data)).resolves.toEqual(expect.objectContaining({
       id: '483616', url: 'https://www.eventernote.com/events/483616',
     }))
-    expect(fetchMock.mock.calls.filter(([input]) => input.toString().includes('/events/search?'))).toHaveLength(2)
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().includes('/events/search?'))).toHaveLength(3)
+  })
+
+  it('finds a similar title by checking events at the same venue and start time', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) {
+        const keyword = new URL(url).searchParams.get('keyword')
+        return response(keyword === 'Example Hall' ? '<a href="/events/502">Sample Liev</a>' : '', url)
+      }
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/502')) return response(`
+        <a href="/events/502/edit">このイベントを編集</a>
+        <a href="/places/example/10">Example Hall</a>
+      `, url)
+      if (url.endsWith('/events/502/edit')) return response(editForm().replaceAll('/501/', '/502/').replace('Sample Live', 'Sample Liev'), url)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toEqual(expect.objectContaining({
+      id: '502', url: 'https://www.eventernote.com/events/502',
+    }))
+  })
+
+  it('does not accept a similar title when the venue is different', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response('<a href="/events/502">Sample Liev</a>', url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/502')) return response(`
+        <a href="/events/502/edit">このイベントを編集</a>
+        <a href="/places/other/99">Other Hall</a>
+      `, url)
+      if (url.endsWith('/events/502/edit')) return response(
+        editForm().replaceAll('/501/', '/502/').replace('Sample Live', 'Sample Liev').replace('place_id" value="10', 'place_id" value="99'),
+        url,
+      )
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toBeUndefined()
+  })
+
+  it('does not accept a similar title when the start time is different', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response('<a href="/events/502">Sample Liev</a>', url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/502')) return response(detailHtml(true).replaceAll('/501', '/502'), url)
+      if (url.endsWith('/events/502/edit')) return response(
+        editForm().replaceAll('/501/', '/502/').replace('Sample Live', 'Sample Liev').replace('start_time[hour]" value="19', 'start_time[hour]" value="20'),
+        url,
+      )
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toBeUndefined()
+  })
+
+  it('does not choose between equally similar events at the same venue and time', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response(`
+        <a href="/events/502">Sample Liev</a>
+        <a href="/events/503">Sample Liev</a>
+      `, url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      const id = url.match(/\/events\/(502|503)/)?.[1]
+      if (id && url.endsWith(`/events/${id}`)) return response(detailHtml(true).replaceAll('/501', `/${id}`), url)
+      if (id && url.endsWith(`/events/${id}/edit`)) return response(
+        editForm().replaceAll('/501/', `/${id}/`).replace('Sample Live', 'Sample Liev'),
+        url,
+      )
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toBeUndefined()
   })
 
   it('fills only missing fields and keeps existing event values', async () => {
@@ -873,5 +961,117 @@ describe('Eventernote existing event reconciliation', () => {
     expect((updateBody as FormData).get('actor_ids')).toBe('11,22')
     expect((updateBody as FormData).has('thumbnail_image')).toBe(false)
     expect(new Headers(updateCall?.[1]?.headers).has('Content-Type')).toBe(false)
+  })
+
+  it('preserves the current venue when the image edit form leaves its JavaScript-loaded place select empty', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) {
+        return response(`<div class="gb_events_info_table">
+          <a href="/places/example-hall/759">Example Hall</a>
+        </div><a href="/events/501/edit">このイベントを編集</a>`, url)
+      }
+      if (url.endsWith('/events/501/edit') && !init?.method) {
+        return response(`<form action="/events/501/edit/complete" method="post" enctype="multipart/form-data">
+          <input name="event_name" value="Sample Live"><input type="hidden" name="actor_ids" value="11">
+          <select name="prefecture"><option value="13" selected>東京都</option></select>
+          <select name="place_id"><option value="" selected>未定</option></select>
+          <input type="file" name="thumbnail_image">
+        </form>`, url)
+      }
+      if (url.endsWith('/events/501/edit/complete')) {
+        return response('', 'https://www.eventernote.com/events/501/')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.addEventImage('501', new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), 'image/jpeg', 'event.jpg'))
+      .resolves.toBe('https://www.eventernote.com/events/501/')
+    const uploadCall = fetchMock.mock.calls.find(([input]) => input.toString().endsWith('/events/501/edit/complete'))
+    const uploadBody = uploadCall?.[1]?.body as FormData
+    expect(uploadBody.get('place_id')).toBe('759')
+    expect(uploadBody.get('prefecture')).toBe('13')
+    expect(uploadBody.get('actor_ids')).toBe('11')
+    expect(uploadBody.get('thumbnail_image')).toBeInstanceOf(Blob)
+  })
+})
+
+describe('Eventernote event attendance', () => {
+  const response = (body: string, url: string, status = 200) => {
+    const result = new Response(body, { status })
+    Object.defineProperty(result, 'url', { value: url })
+    return result
+  }
+
+  const loginResponse = (url: string) => response(
+    '<form action="/login/email"><input name="email"><input name="password"></form>', url,
+  )
+
+  it('uses the logged-in Autofill account and the event-page crumb to attend', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) {
+        return response('<meta name="crumb" content="safe-crumb"><a href="javascript:addNote(\'501\')">參加</a>', url)
+      }
+      if (url.includes('/api/notes/add?')) {
+        return response(JSON.stringify({ code: 200, results: { note_id: 987 } }), url)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'autofill', 'password')
+
+    await expect(client.attendEvent('501')).resolves.toEqual({
+      created: true,
+      noteId: '987',
+      url: 'https://www.eventernote.com/notes/987/edit',
+    })
+    const addCall = fetchMock.mock.calls.find(([input]) => input.toString().includes('/api/notes/add?'))
+    const addUrl = new URL(addCall?.[0].toString() ?? '')
+    expect(addUrl.searchParams.get('event_id')).toBe('501')
+    expect(addUrl.searchParams.get('crumb')).toBe('safe-crumb')
+    expect(addCall?.[1]).toEqual(expect.objectContaining({
+      headers: expect.objectContaining({ Accept: 'application/json', Referer: 'https://www.eventernote.com/events/501' }),
+    }))
+  })
+
+  it('treats an existing note as already attending without another write', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) return response('<a href="/notes/654/edit">ノートを編集する</a>', url)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'autofill', 'password')
+
+    await expect(client.attendEvent('501')).resolves.toEqual({
+      created: false,
+      noteId: '654',
+      url: 'https://www.eventernote.com/notes/654/edit',
+    })
+    expect(fetchMock.mock.calls.some(([input]) => input.toString().includes('/api/notes/add'))).toBe(false)
+  })
+
+  it('does not report completion when Eventernote rejects note creation', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/501')) return response('<meta name="crumb" content="safe-crumb">', url)
+      if (url.includes('/api/notes/add?')) return response(JSON.stringify({ code: 400, results: {} }), url)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'autofill', 'password')
+
+    await expect(client.attendEvent('501')).rejects.toThrow('活動已建立，但參加活動未成功')
   })
 })

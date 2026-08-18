@@ -69,6 +69,7 @@ export interface SubmissionProgress {
   eventUrl?: string
   eventAction?: 'created' | 'existing' | 'updated'
   imageAdded?: boolean
+  attendanceAdded?: boolean
   completed?: boolean
 }
 
