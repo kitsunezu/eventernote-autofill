@@ -789,6 +789,33 @@ describe('Eventernote existing event reconciliation', () => {
     }))
   })
 
+  it('runs every search and validates venue candidates before excluding them by title', async () => {
+    const searchedKeywords: string[] = []
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) {
+        const keyword = new URL(url).searchParams.get('keyword') ?? ''
+        searchedKeywords.push(keyword)
+        if (keyword === 'Sample Live') return response('', url, 500)
+        if (keyword === 'Example Hall') return response('<a href="/events/502">活動詳情</a>', url)
+        return response('', url)
+      }
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/502')) return response(`
+        <a href="/events/502/edit">このイベントを編集</a>
+        <a href="/places/example/10">Example Hall</a>
+      `, url)
+      if (url.endsWith('/events/502/edit')) return response(editForm().replaceAll('/501/', '/502/').replace('Sample Live', 'Sample Liev'), url)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toEqual(expect.objectContaining({ id: '502' }))
+    expect(searchedKeywords).toEqual(expect.arrayContaining(['Sample Live', 'Example Hall']))
+  })
+
   it('does not accept a similar title when the venue is different', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString()

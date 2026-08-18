@@ -19,6 +19,7 @@ export interface ExistingEventMatch extends ExistingEventReference {
   hasImage: boolean
   missingFields: string[]
   place?: { id: string; name: string }
+  titleSimilarity: number
 }
 
 interface PostCreateForm {
@@ -611,7 +612,8 @@ export class EventernoteClient {
   async matchExistingEvent(eventId: string, data: EventData): Promise<ExistingEventMatch | undefined> {
     const existingForm = await this.findExistingEventForm(eventId)
     const current = this.existingEventValues(existingForm)
-    const exactTitle = normalize(current.title) === normalize(data.title)
+    const titleSimilarity = similarity(current.title, data.title)
+    const exactTitle = titleSimilarity === 1
     const sameDateAndTime = Boolean(
       current.date && data.date && current.date === data.date
       && current.startTime && data.startTime && current.startTime === data.startTime,
@@ -624,7 +626,7 @@ export class EventernoteClient {
       ),
     )
     if (!exactTitle && !(
-      similarity(current.title, data.title) >= SIMILAR_EVENT_TITLE_THRESHOLD
+      titleSimilarity >= SIMILAR_EVENT_TITLE_THRESHOLD
       && sameDateAndTime
       && samePlace
     )) return undefined
@@ -657,15 +659,16 @@ export class EventernoteClient {
       hasImage: current.hasImage,
       missingFields,
       place: current.place,
+      titleSimilarity,
     }
   }
 
   async findMatchingEvent(data: EventData): Promise<ExistingEventMatch | undefined> {
     if (!data.title.trim()) return undefined
     const [year, month, day] = data.date.split('-')
-    const candidates = new Map<string, number>()
+    const candidates = new Set<string>()
     const queries = [...new Set([...eventSearchQueries(data.title), data.place.name.trim()].filter(Boolean))]
-    for (const query of queries) {
+    const searchResults = await Promise.allSettled(queries.map(async (query) => {
       const url = new URL('/events/search', this.origin)
       url.searchParams.set('keyword', query)
       url.searchParams.set('__from', 'autofill-duplicate-check')
@@ -679,23 +682,25 @@ export class EventernoteClient {
       })
       if (!response.ok) throw new Error(`Eventernote 活動搜尋失敗 (HTTP ${response.status})`)
       const $ = cheerio.load(await response.text())
+      const ids = new Set<string>()
       $('a[href^="/events/"]').each((_, link) => {
         const href = $(link).attr('href') ?? ''
         const id = href.match(/^\/events\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
-        const name = $(link).text().replace(/\s+/g, ' ').trim()
-        const score = similarity(name, data.title)
-        if (id && score >= SIMILAR_EVENT_TITLE_THRESHOLD) {
-          candidates.set(id, Math.max(score, candidates.get(id) ?? 0))
-        }
+        if (id) ids.add(id)
       })
+      return ids
+    }))
+    for (const result of searchResults) {
+      if (result.status === 'fulfilled') for (const id of result.value) candidates.add(id)
+    }
+    if (searchResults.every((result) => result.status === 'rejected')) {
+      const failure = searchResults[0]
+      throw failure.status === 'rejected' ? failure.reason : new Error('Eventernote 活動搜尋失敗')
     }
     const matches: Array<{ match: ExistingEventMatch; score: number }> = []
-    const rankedCandidates = [...candidates]
-      .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || Number(leftId) - Number(rightId))
-      .slice(0, 12)
-    for (const [id, score] of rankedCandidates) {
+    for (const id of [...candidates].sort((left, right) => Number(left) - Number(right))) {
       const match = await this.matchExistingEvent(id, data)
-      if (match) matches.push({ match, score })
+      if (match) matches.push({ match, score: match.titleSimilarity })
     }
     const exactMatches = matches.filter(({ score }) => score === 1)
       .sort(({ match: left }, { match: right }) => Number(left.id) - Number(right.id))
