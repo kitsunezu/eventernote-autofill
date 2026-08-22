@@ -789,6 +789,34 @@ describe('Eventernote existing event reconciliation', () => {
     }))
   })
 
+  it('ignores a generic venue link when the edit form venue is JavaScript-loaded', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.includes('/events/search?')) return response('<a href="/events/502">Sample Liev</a>', url)
+      if (url.endsWith('/login')) return loginResponse(url)
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/502')) return response(`
+        <a href="/events/502/edit">このイベントを編集</a>
+        <a href="/places/example/10">Example Hall</a>
+        <a href="/places/">イベント会場を探す</a>
+      `, url)
+      if (url.endsWith('/events/502/edit')) {
+        return response(
+          editForm().replaceAll('/501/', '/502/').replace('Sample Live', 'Sample Liev')
+            .replace('<input name="place_id" value="10">', '<select name="place_id"><option value="">未定</option></select>'),
+          url,
+        )
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+
+    await expect(client.findMatchingEvent(eventData)).resolves.toEqual(expect.objectContaining({
+      id: '502', url: 'https://www.eventernote.com/events/502',
+    }))
+  })
+
   it('runs every search and validates venue candidates before excluding them by title', async () => {
     const searchedKeywords: string[] = []
     const fetchMock = vi.fn(async (input: string | URL | Request) => {

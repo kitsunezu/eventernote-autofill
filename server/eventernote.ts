@@ -581,8 +581,11 @@ export class EventernoteClient {
     })
     const actorIds = [...new Set(body.getAll('actor_ids').flatMap((value) => value.split(',')).map((id) => id.trim()).filter(Boolean))]
     const placeId = this.eventFormValue(body, 'place_id', /place.*id|place_id/)
-    const placeLink = detail('a[href^="/places/"]').toArray().find((link) => idFromPath(detail(link).attr('href') ?? '') === placeId)
-      ?? detail('a[href^="/places/"]').first().get(0)
+    const placeLinks = detail('a[href^="/places/"]').toArray()
+    const placeLink = (placeId
+      ? placeLinks.find((link) => idFromPath(detail(link).attr('href') ?? '') === placeId)
+      : undefined)
+      ?? placeLinks.find((link) => Boolean(idFromPath(detail(link).attr('href') ?? '')))
     const linkPlaceId = placeLink ? idFromPath(detail(placeLink).attr('href') ?? '') : ''
     const placeName = placeLink ? detail(placeLink).text().replace(/\s+/g, ' ').trim() : ''
     const year = body.get('date[year]')?.trim() ?? ''
