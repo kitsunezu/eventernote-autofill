@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EventData } from '../shared/types.js'
-import { enrichWithAi, extractEventsWithAi, resolveEventernoteEntities } from './ai.js'
+import { enrichWithAi, extractEventsWithAi, resolveEventernoteEntities, titleWithTourVenue } from './ai.js'
 
 const scalar = (value = '', confidence: 'high' | 'medium' | 'low' = 'low') => ({ value, confidence })
 
@@ -200,6 +200,41 @@ describe('enrichWithAi', () => {
 
     expect(events.map((event) => event.data.startTime)).toEqual(['14:30', '19:00'])
     expect(onResponse).toHaveBeenCalledWith({ events: [day, night] })
+  })
+
+  it('accepts a complete 47-stop tour and appends each venue to the title', async () => {
+    const tourStops = Array.from({ length: 47 }, (_, index) => ({
+      date: '2026-10-22', openTime: '', startTime: '', endTime: '',
+      placeName: `Venue ${index + 1}`, placeAddress: '',
+    }))
+    const fetchMock = stubJsonResponse({
+      tourTitle: 'SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」',
+      countryCode: 'JP',
+      actors: ['SCANDAL'],
+      stops: tourStops,
+    })
+
+    const events = await extractEventsWithAi(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna',
+      'https://x.com/scandal_band/status/2091828361530118640', '47-stop tour poster', currentEvent(),
+    )
+
+    expect(events).toHaveLength(47)
+    expect(events[0].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 — Venue 1')
+    expect(events[46].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 — Venue 47')
+    expect(events[0].data.startTime).toBe('')
+    expect(events[0].data.actors[0].name).toBe('SCANDAL')
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.text.format.schema.properties.stops.maxItems).toBe(64)
+    expect(body.text.format.name).toBe('eventernote_tour_stops')
+    expect(body.reasoning).toEqual({ effort: 'low' })
+    expect(body.input[0].content).toContain('every explicitly dated venue row')
+  })
+
+  it('does not duplicate a tour venue already present in the title', () => {
+    expect(titleWithTourVenue('Sample TOUR — Zepp Osaka Bayside', 'Zepp Osaka Bayside'))
+      .toBe('Sample TOUR — Zepp Osaka Bayside')
+    expect(titleWithTourVenue('One-off Live', 'Example Hall')).toBe('One-off Live')
   })
 
   it('fills an end time that the source explicitly labels', async () => {

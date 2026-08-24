@@ -32,6 +32,8 @@ const eventernote = new EventernoteClient(
 )
 const analyses = new AnalysisJobs()
 const AI_ENTITY_RESOLUTION_CONCURRENCY = 2
+const BULK_EVENT_LOOKUP_CONCURRENCY = 4
+const BULK_EVENT_THRESHOLD = 12
 const ACTOR_METADATA_RETRY_WARNING_PREFIX = 'AI 尚未完整補全新出演者'
 
 function setAnalysisStage(analysisId: string, stage: AnalysisStage): void {
@@ -174,19 +176,41 @@ interface ReviewCandidatePreparation {
   candidateSearchWarnings: Set<string>
 }
 
-async function prepareReviewCandidates(review: ReviewEvent): Promise<ReviewCandidatePreparation> {
+interface ReviewCandidateCache {
+  entities: Map<string, Promise<EventData['place']['candidates']>>
+  contextualActors: Map<string, Promise<Array<EventData['place']['candidates']>>>
+}
+
+async function prepareReviewCandidates(
+  review: ReviewEvent,
+  cache?: ReviewCandidateCache,
+): Promise<ReviewCandidatePreparation> {
   const candidateSearchWarnings = new Set<string>()
   const safeCandidateSearch = async (name: string, kind: 'place' | 'actor') => {
     try {
-      return await searchEntityCandidates(name, kind)
+      const key = `${kind}\0${name.trim()}`
+      let request = cache?.entities.get(key)
+      if (!request) {
+        request = searchEntityCandidates(name, kind)
+        cache?.entities.set(key, request)
+      }
+      return await request
     } catch {
       candidateSearchWarnings.add(EVENTERNOTE_CANDIDATE_SEARCH_WARNING)
       return []
     }
   }
+  const seriesQuery = eventSeriesQuery(review.data.title)
+  const actorNames = review.data.actors.map((actor) => actor.name)
+  const contextualKey = `${seriesQuery}\0${actorNames.join('\0')}`
+  let contextualRequest = cache?.contextualActors.get(contextualKey)
+  if (!contextualRequest) {
+    contextualRequest = eventernote.searchActorsFromEvent(seriesQuery, actorNames)
+    cache?.contextualActors.set(contextualKey, contextualRequest)
+  }
   const [placeCandidates, contextualActorCandidates, ...searchedActorCandidates] = await Promise.all([
     safeCandidateSearch(review.data.place.name, 'place'),
-    eventernote.searchActorsFromEvent(eventSeriesQuery(review.data.title), review.data.actors.map((actor) => actor.name))
+    contextualRequest
       .catch(() => {
         candidateSearchWarnings.add(EVENTERNOTE_CANDIDATE_SEARCH_WARNING)
         return review.data.actors.map(() => [])
@@ -224,10 +248,11 @@ async function prepareReviewCandidates(review: ReviewEvent): Promise<ReviewCandi
 
 async function resolvePreparedReview(
   preparation: ReviewCandidatePreparation,
+  useAi = true,
 ): Promise<ReviewEvent> {
   const { review, candidateSearchWarnings } = preparation
   let resolutionWarning = ''
-  if (config.openAiApiKey && candidateSearchWarnings.size === 0) {
+  if (useAi && config.openAiApiKey && candidateSearchWarnings.size === 0) {
     try {
       const resolution = await resolveEventernoteEntities(
         config.openAiApiKey, config.openAiBaseUrl, config.openAiModel, review.sourceUrl, review.data,
@@ -239,7 +264,7 @@ async function resolvePreparedReview(
       resolutionWarning = `AI 實體判斷失敗：${detail}`
     }
   }
-  if ((!config.openAiApiKey || resolutionWarning) && candidateSearchWarnings.size === 0) {
+  if ((!useAi || !config.openAiApiKey || resolutionWarning) && candidateSearchWarnings.size === 0) {
     if (!review.data.place.selectedId && review.data.place.candidates.length === 0) review.data.place.createNew = true
     review.data.actors.forEach((actor) => {
       if (!actor.selectedId && actor.candidates.length === 0) actor.createNew = true
@@ -620,16 +645,21 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
         warnings: [...new Set(warnings)],
       }
     })
-    const candidatePreparations: ReviewCandidatePreparation[] = []
-    for (const event of events) candidatePreparations.push(await prepareReviewCandidates(event))
+    const bulkEvents = events.length > BULK_EVENT_THRESHOLD
+    const candidateCache: ReviewCandidateCache = { entities: new Map(), contextualActors: new Map() }
+    const candidatePreparations = await mapWithConcurrency(
+      events,
+      bulkEvents ? BULK_EVENT_LOOKUP_CONCURRENCY : AI_ENTITY_RESOLUTION_CONCURRENCY,
+      (event) => prepareReviewCandidates(event, candidateCache),
+    )
     const preparedEvents = await mapWithConcurrency(
       candidatePreparations,
-      AI_ENTITY_RESOLUTION_CONCURRENCY,
-      resolvePreparedReview,
+      bulkEvents ? BULK_EVENT_LOOKUP_CONCURRENCY : AI_ENTITY_RESOLUTION_CONCURRENCY,
+      (preparation) => resolvePreparedReview(preparation, !bulkEvents),
     )
     const reviewedEvents = await mapWithConcurrency(
       preparedEvents,
-      AI_ENTITY_RESOLUTION_CONCURRENCY,
+      bulkEvents ? BULK_EVENT_LOOKUP_CONCURRENCY : AI_ENTITY_RESOLUTION_CONCURRENCY,
       attachExistingEvent,
     )
         const result: AnalyzeResult = {
