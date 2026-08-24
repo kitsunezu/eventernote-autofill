@@ -233,6 +233,8 @@ describe('enrichWithAi', () => {
     expect(body.text.format.name).toBe('eventernote_tour_stops')
     expect(body.reasoning).toEqual({ effort: 'low' })
     expect(body.input[0].content).toContain('every explicitly dated venue row')
+    expect(body.input[0].content).toContain('visibly brands the tour title or poster')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('appends a tour city without a separator and does not duplicate it', () => {

@@ -291,7 +291,7 @@ async function extractTourEventsWithAi(
   onResponse: ((response: unknown) => void) | undefined,
   images: AiImageInput[],
 ): Promise<Array<{ data: EventData; evidence: Partial<Record<string, Evidence>> }>> {
-  const response = await fetchOpenAiResponse(baseUrl, apiKey, {
+  const requestBody = {
     model,
     store: false,
     reasoning: { effort: 'low' },
@@ -313,7 +313,10 @@ async function extractTourEventsWithAi(
           'Inspect every supplied image and return exactly one stop for every explicitly dated venue row, in source order.',
           'Do not omit a stop because opening or start times have not been announced; leave unknown times empty.',
           'Do not include ticket sales, deadlines, online streams, merchandise, or other non-performance dates.',
-          'tourTitle is the shared official tour title without a venue suffix. Actor values contain performer names only.',
+          'tourTitle is the shared official tour title without a venue suffix.',
+          'actors must include every performer explicitly identified by the source as performing on the tour.',
+          'Treat an artist or group that visibly brands the tour title or poster as the tour headliner and include it in actors; this is direct source evidence, not a guess.',
+          'Actor values contain performer names only; exclude venues, organizers, ticket agencies, and promotional phrases.',
           'prefectureName is the prefecture or primary location printed before the colon for that stop; this is the location label used in the event title.',
           'cityName is an optional secondary city or locality label only when the source visually or textually separates it from the venue name.',
           'When there is no distinct secondary geographic label between the primary location and venue, leave cityName empty.',
@@ -334,16 +337,29 @@ async function extractTourEventsWithAi(
         ],
       },
     ],
-  }, 180_000)
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { error?: { code?: string } }
-    const code = payload.error?.code ? `，${payload.error.code}` : ''
-    throw new Error(`OpenAI 巡演核對失敗 (HTTP ${response.status}${code})`)
+  }
+  const requestTour = async () => {
+    const response = await fetchOpenAiResponse(baseUrl, apiKey, requestBody, 180_000)
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: { code?: string } }
+      const code = payload.error?.code ? `，${payload.error.code}` : ''
+      throw new Error(`OpenAI 巡演核對失敗 (HTTP ${response.status}${code})`)
+    }
+    const text = responseText(await response.json())
+    if (!text) throw new Error('OpenAI 未回傳巡演結構化結果')
+    return AiTourResult.parse(JSON.parse(text))
   }
 
-  const text = responseText(await response.json())
-  if (!text) throw new Error('OpenAI 未回傳巡演結構化結果')
-  const tour = AiTourResult.parse(JSON.parse(text))
+  const firstTour = await requestTour()
+  let tour = firstTour
+  if (firstTour.stops.length > 12) {
+    const verificationTour = await requestTour().catch(() => undefined)
+    if (verificationTour) {
+      const completenessScore = (candidate: typeof firstTour) => candidate.stops.length * 1_000
+        + candidate.actors.filter((actor) => actor.trim()).length
+      if (completenessScore(verificationTour) > completenessScore(firstTour)) tour = verificationTour
+    }
+  }
   onResponse?.(tour)
   const actorNames = [...new Set(tour.actors.map((name) => name.trim()).filter(Boolean))]
   const countryCode = /^[A-Z]{2}$/.test(tour.countryCode.trim().toUpperCase())
