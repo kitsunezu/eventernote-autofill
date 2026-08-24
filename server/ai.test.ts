@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EventData } from '../shared/types.js'
-import { enrichWithAi, extractEventsWithAi, resolveEventernoteEntities, titleWithTourVenue } from './ai.js'
+import { enrichWithAi, extractEventsWithAi, resolveEventernoteEntities, titleWithTourCity } from './ai.js'
 
 const scalar = (value = '', confidence: 'high' | 'medium' | 'low' = 'low') => ({ value, confidence })
 
@@ -204,7 +204,10 @@ describe('enrichWithAi', () => {
 
   it('accepts a complete 47-stop tour and appends each venue to the title', async () => {
     const tourStops = Array.from({ length: 47 }, (_, index) => ({
-      date: '2026-10-22', openTime: '', startTime: '', endTime: '',
+      date: index === 0 ? '2027-01-23' : index === 1 ? '2027-04-30' : '2026-10-22',
+      openTime: '', startTime: '', endTime: '',
+      prefectureName: index < 2 ? '東京' : `Prefecture ${index + 1}`,
+      cityName: index === 0 ? '' : index === 1 ? 'Venue 2' : `City ${index + 1}`,
       placeName: `Venue ${index + 1}`, placeAddress: '',
     }))
     const fetchMock = stubJsonResponse({
@@ -220,8 +223,9 @@ describe('enrichWithAi', () => {
     )
 
     expect(events).toHaveLength(47)
-    expect(events[0].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 — Venue 1')
-    expect(events[46].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 — Venue 47')
+    expect(events[0].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 東京 1/23')
+    expect(events[1].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 東京 4/30')
+    expect(events[46].data.title).toBe('SCANDAL FINAL TOUR 2026-2027 「SCANDALの47都道府県ツアー」 Prefecture 47')
     expect(events[0].data.startTime).toBe('')
     expect(events[0].data.actors[0].name).toBe('SCANDAL')
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
@@ -231,10 +235,12 @@ describe('enrichWithAi', () => {
     expect(body.input[0].content).toContain('every explicitly dated venue row')
   })
 
-  it('does not duplicate a tour venue already present in the title', () => {
-    expect(titleWithTourVenue('Sample TOUR — Zepp Osaka Bayside', 'Zepp Osaka Bayside'))
-      .toBe('Sample TOUR — Zepp Osaka Bayside')
-    expect(titleWithTourVenue('One-off Live', 'Example Hall')).toBe('One-off Live')
+  it('appends a tour city without a separator and does not duplicate it', () => {
+    expect(titleWithTourCity('Sample TOUR', '大阪')).toBe('Sample TOUR 大阪')
+    expect(titleWithTourCity('Sample TOUR 大阪', '大阪')).toBe('Sample TOUR 大阪')
+    expect(titleWithTourCity('Sample TOUR', '東京', '2027-01-23')).toBe('Sample TOUR 東京 1/23')
+    expect(titleWithTourCity('Sample TOUR 東京', '東京', '2027-01-23')).toBe('Sample TOUR 東京 1/23')
+    expect(titleWithTourCity('One-off Live', '大阪')).toBe('One-off Live')
   })
 
   it('fills an end time that the source explicitly labels', async () => {

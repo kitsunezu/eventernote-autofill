@@ -30,6 +30,8 @@ const AiTourStop = z.object({
   openTime: z.string(),
   startTime: z.string(),
   endTime: z.string(),
+  prefectureName: z.string(),
+  cityName: z.string(),
   placeName: z.string(),
   placeAddress: z.string(),
 })
@@ -146,10 +148,14 @@ const tourJsonSchema = {
           openTime: { type: 'string' },
           startTime: { type: 'string' },
           endTime: { type: 'string' },
+          prefectureName: { type: 'string' },
+          cityName: { type: 'string' },
           placeName: { type: 'string' },
           placeAddress: { type: 'string' },
         },
-        required: ['date', 'openTime', 'startTime', 'endTime', 'placeName', 'placeAddress'],
+        required: [
+          'date', 'openTime', 'startTime', 'endTime', 'prefectureName', 'cityName', 'placeName', 'placeAddress',
+        ],
         additionalProperties: false,
       },
     },
@@ -198,14 +204,34 @@ function comparableName(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase().replace(/[\s・･\-_.,，。:：()（）「」『』【】]/g, '')
 }
 
-export function titleWithTourVenue(title: string, placeName: string): string {
+function monthDay(date: string): string {
+  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/)
+  return match ? `${Number(match[1])}/${Number(match[2])}` : ''
+}
+
+function tourStopCity(stop: z.infer<typeof AiTourStop>): string {
+  const prefectureName = stop.prefectureName.trim()
+  if (prefectureName) return prefectureName
+  const cityName = stop.cityName.trim()
+  const placeName = stop.placeName.trim()
+  return cityName && comparableName(cityName) !== comparableName(placeName)
+    ? cityName
+    : ''
+}
+
+export function titleWithTourCity(title: string, cityName: string, date = ''): string {
   const normalizedTitle = title.trim()
-  const normalizedPlace = placeName.trim()
-  if (!normalizedTitle || !normalizedPlace || !/(?:\btour\b|ツアー|巡演|巡迴|巡回|都道府県)/iu.test(normalizedTitle)) {
+  const normalizedCity = cityName.trim()
+  if (!normalizedTitle || !normalizedCity || !/(?:\btour\b|ツアー|巡演|巡迴|巡回|都道府県)/iu.test(normalizedTitle)) {
     return normalizedTitle
   }
-  if (comparableName(normalizedTitle).includes(comparableName(normalizedPlace))) return normalizedTitle
-  return `${normalizedTitle} — ${normalizedPlace}`
+  const normalizedMonthDay = monthDay(date)
+  const suffix = `${normalizedCity}${normalizedMonthDay ? ` ${normalizedMonthDay}` : ''}`
+  if (comparableName(normalizedTitle).endsWith(comparableName(suffix))) return normalizedTitle
+  if (normalizedMonthDay && comparableName(normalizedTitle).endsWith(comparableName(normalizedCity))) {
+    return `${normalizedTitle} ${normalizedMonthDay}`
+  }
+  return `${normalizedTitle} ${suffix}`
 }
 
 function hiraganaReading(value: string): string {
@@ -288,6 +314,10 @@ async function extractTourEventsWithAi(
           'Do not omit a stop because opening or start times have not been announced; leave unknown times empty.',
           'Do not include ticket sales, deadlines, online streams, merchandise, or other non-performance dates.',
           'tourTitle is the shared official tour title without a venue suffix. Actor values contain performer names only.',
+          'prefectureName is the prefecture or primary location printed before the colon for that stop; this is the location label used in the event title.',
+          'cityName is an optional secondary city or locality label only when the source visually or textually separates it from the venue name.',
+          'When there is no distinct secondary geographic label between the primary location and venue, leave cityName empty.',
+          'placeName is the exact venue name only. Do not prefix it with the prefecture or city unless that text is officially part of the venue name.',
           'Preserve official proper names exactly as written and never translate them.',
           'Dates must be YYYY-MM-DD, times must be 24-hour HH:mm, and countryCode must be ISO 3166-1 alpha-2.',
           'Do not guess missing facts and do not search for unannounced times.',
@@ -320,7 +350,13 @@ async function extractTourEventsWithAi(
     ? tour.countryCode.trim().toUpperCase()
     : current.place.countryCode
   const baseTitle = tour.tourTitle.trim() || current.title
-  const results = tour.stops.map((stop) => {
+  const stopCities = tour.stops.map(tourStopCity)
+  const cityCounts = new Map<string, number>()
+  for (const cityName of stopCities) {
+    const cityKey = comparableName(cityName)
+    if (cityKey) cityCounts.set(cityKey, (cityCounts.get(cityKey) ?? 0) + 1)
+  }
+  const results = tour.stops.map((stop, stopIndex) => {
     const data = structuredClone(current)
     data.date = validDate(stop.date.trim())
     data.openTime = validTime(stop.openTime.trim())
@@ -334,7 +370,10 @@ async function extractTourEventsWithAi(
       createNew: false,
       candidates: [],
     }
-    data.title = titleWithTourVenue(baseTitle, data.place.name)
+    const cityName = stopCities[stopIndex]
+    const cityKey = comparableName(cityName)
+    const repeatedCityDate = (cityCounts.get(cityKey) ?? 0) > 1 ? data.date : ''
+    data.title = titleWithTourCity(baseTitle, cityName, repeatedCityDate)
     if (actorNames.length) {
       const previousByName = new Map(current.actors.map((actor) => [normalizedName(actor.name), actor]))
       data.actors = actorNames.map((name): ActorData => previousByName.get(normalizedName(name)) ?? {
@@ -420,7 +459,6 @@ export async function extractEventsWithAi(
             'Return in-person venue sessions only. Exclude online-only, streaming, livestream, archive, and virtual attendance entries, including an online duplicate of an in-person performance.',
             'Do not create events for ticket sales, archive viewing periods, deadlines, merchandise, or benefits without a separate public performance start time.',
             'Make each title distinguish the session when the page labels it, while preserving the official event name.',
-            'For every tour session, format the title as "<official tour title> — <placeName>", appending the exact venue name once so every stop is distinguishable.',
             'endTime is the actual event end time only. Leave it empty with low confidence unless the source explicitly labels an end, finish, close, 終演, or 終了 time. Never derive it from another session start or assume a duration.',
           ].join(' '),
         },
@@ -473,14 +511,6 @@ export async function extractEventsWithAi(
   }
   mergePlace('name', 'place.name', ai.placeName)
   mergePlace('address', 'place.address', ai.placeAddress)
-
-  const titledForTourVenue = titleWithTourVenue(data.title, data.place.name)
-  if (titledForTourVenue !== data.title) {
-    data.title = titledForTourVenue
-    additions.title = additions.title
-      ? { ...additions.title, value: titledForTourVenue }
-      : { value: titledForTourVenue, source: '巡演場次名稱附加演出地', confidence: 'medium' }
-  }
 
   const countryCode = ai.countryCode.value.trim().toUpperCase()
   if (/^[A-Z]{2}$/.test(countryCode)
