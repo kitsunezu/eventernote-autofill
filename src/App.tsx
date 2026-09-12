@@ -252,6 +252,8 @@ function writeAnalysisToConsole(result: AnalyzeResult, aiConfigured: boolean): v
   console.log(`[Eventernote Autofill] 抓取重點\n${JSON.stringify({
     ...crawlerSummary,
     descriptionEvidence: crawler?.evidence.description ?? fallbackEvent?.evidence.description,
+    dynamicSource: crawler?.dynamicSource,
+    dynamicSourceWarning: crawler?.dynamicSourceWarning,
     linkedSources: crawler?.linkedSources ?? [],
     aiImageCount: crawler?.aiImageCount ?? 0,
   }, null, 2)}`)

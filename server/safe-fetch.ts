@@ -2,6 +2,7 @@ import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
 
 const MAX_BYTES = 2_000_000
+const MAX_JSON_REQUEST_BYTES = 64_000
 const USER_AGENT = 'EventernoteAutofill/0.1 (+private event metadata importer)'
 
 function isPrivateIpv4(address: string): boolean {
@@ -91,6 +92,79 @@ export async function safeFetchHtml(input: string): Promise<{ html: string; fina
     return { html: new TextDecoder().decode(bytes), finalUrl: current.toString() }
   }
   throw new Error('來源網站轉址次數過多')
+}
+
+export async function safeFetchJson(
+  input: string,
+  body: unknown,
+  referrer?: string,
+): Promise<{ json: unknown; finalUrl: string }> {
+  let current = await assertPublicUrl(input)
+  const encodedBody = JSON.stringify(body)
+  if (encodedBody === undefined) throw new Error('JSON 來源請求內容無效')
+  if (new TextEncoder().encode(encodedBody).byteLength > MAX_JSON_REQUEST_BYTES) {
+    throw new Error('JSON 來源請求超過 64 KB 限制')
+  }
+  const referrerUrl = referrer ? new URL(referrer) : undefined
+  if (referrerUrl && referrerUrl.protocol !== 'https:' && referrerUrl.protocol !== 'http:') {
+    throw new Error('JSON 來源 referrer 只支援 HTTP 或 HTTPS 網址')
+  }
+
+  for (let redirect = 0; redirect <= 4; redirect += 1) {
+    const response = await fetch(current, {
+      method: 'POST',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...(referrerUrl ? {
+          'Origin': referrerUrl.origin,
+          'Referer': referrerUrl.toString(),
+          'X-Referer': referrerUrl.origin,
+        } : {}),
+      },
+      body: encodedBody,
+    })
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location')
+      if (!location) throw new Error(`JSON 來源回傳無目標的轉址 (${response.status})`)
+      current = await assertPublicUrl(new URL(location, current).toString())
+      continue
+    }
+    if (!response.ok) throw new Error(`JSON 來源回傳 HTTP ${response.status}`)
+    const mimeType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+    if (mimeType !== 'application/json' && !mimeType.endsWith('+json')) throw new Error('JSON 來源沒有回傳 JSON')
+    const declaredLength = Number(response.headers.get('content-length') ?? 0)
+    if (declaredLength > MAX_BYTES) throw new Error('JSON 來源回應超過 2 MB 限制')
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('JSON 來源沒有回傳內容')
+    const chunks: Uint8Array[] = []
+    let size = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_BYTES) {
+        await reader.cancel()
+        throw new Error('JSON 來源回應超過 2 MB 限制')
+      }
+      chunks.push(value)
+    }
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    try {
+      return { json: JSON.parse(new TextDecoder().decode(bytes)), finalUrl: current.toString() }
+    } catch {
+      throw new Error('JSON 來源回傳無效 JSON')
+    }
+  }
+  throw new Error('JSON 來源轉址次數過多')
 }
 
 export async function safeFetchImage(input: string): Promise<{ bytes: Uint8Array; mimeType: string; finalUrl: string }> {

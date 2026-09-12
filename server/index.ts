@@ -23,6 +23,7 @@ import { classifySource, inferCountry, isOnlineOnlyEvent, languageForCountry } f
 import { extractRelevantPageText, parseEventPage } from './parser.js'
 import { safeFetchHtml, safeFetchImage } from './safe-fetch.js'
 import { extractSourceReferences, selectBestParsedSource } from './source-discovery.js'
+import { hydrateDynamicSourcePage } from './source-hydration.js'
 
 const config = loadConfig()
 const eventernote = new EventernoteClient(
@@ -560,11 +561,20 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     let finalUrl = input.url
     let html = ''
     let fetchWarning = ''
+    let dynamicSource: string | undefined
+    let dynamicSourceWarning = ''
     try {
       const page = await safeFetchHtml(input.url)
       finalUrl = page.finalUrl
       sourceKind = classifySource(finalUrl)
       html = page.html
+      try {
+        const hydrated = await hydrateDynamicSourcePage(html, finalUrl)
+        html = hydrated.html
+        dynamicSource = hydrated.provider
+      } catch (error) {
+        dynamicSourceWarning = error instanceof Error ? error.message : '無法讀取動態來源內容'
+      }
     } catch (error) {
       fetchWarning = error instanceof Error ? error.message : '無法直接讀取來源頁'
     }
@@ -623,6 +633,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       const warnings = [
         ...(aiWarning ? [aiWarning] : []),
         ...(fetchWarning ? [`來源頁無法直接讀取：${fetchWarning}${config.openAiApiKey ? '；已改用 OpenAI 搜尋核對' : '；請手動填寫或設定 OpenAI'}`] : []),
+        ...(dynamicSourceWarning ? [`動態來源內容讀取失敗：${dynamicSourceWarning}${config.openAiApiKey ? '；已改用 OpenAI 搜尋核對' : '；請手動填寫或設定 OpenAI'}`] : []),
         ...(!config.openAiApiKey ? parsed.warnings : []),
         ...requiredWarnings(data, false),
       ]
@@ -670,6 +681,8 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
               linkedSources: linkedPages.map((page) => page.finalUrl),
               aiImageCount,
               ...(fetchWarning ? { fetchWarning } : {}),
+              ...(dynamicSource ? { dynamicSource } : {}),
+              ...(dynamicSourceWarning ? { dynamicSourceWarning } : {}),
               sourceTitle: parsed.sourceTitle,
               data: parsed.data,
               evidence: parsed.evidence,

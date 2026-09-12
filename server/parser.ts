@@ -105,19 +105,19 @@ export function extractRelevantPageText(html: string): string {
   root.find('h1, h2, h3, h4, h5, h6, p, li, dt, dd, tr, section, article, div').each((_, element) => {
     $(element).append('\n')
   })
-  const seen = new Set<string>()
+  let previousLine = ''
   const lines = root.text().split(/\r?\n/).map((line) => line.replace(/[\t ]+/g, ' ').trim()).filter((line) => {
-    if (!line || seen.has(line)) return false
-    seen.add(line)
+    if (!line || line === previousLine) return false
+    previousLine = line
     return true
   })
-  const heading = [
+  const heading = [...new Set([
     $('title').text().replace(/\s+/g, ' ').trim(),
     meta($, 'og:title'),
     meta($, 'description'),
     meta($, 'og:description'),
-  ].filter(Boolean)
-  return [...new Set([...heading, ...lines])].join('\n').slice(0, 30_000)
+  ].filter(Boolean))]
+  return [...heading, ...lines].join('\n').slice(0, 30_000)
 }
 
 export function parseEventPage(html: string, sourceUrl: string): Pick<ReviewEvent, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> {

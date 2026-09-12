@@ -111,6 +111,8 @@ export interface AnalyzeResult {
     crawlerResult: Pick<ReviewEvent, 'sourceTitle' | 'data' | 'evidence' | 'warnings'> & {
       finalUrl: string
       fetchWarning?: string
+      dynamicSource?: string
+      dynamicSourceWarning?: string
       linkedSources?: string[]
       aiImageCount?: number
     }

@@ -134,4 +134,14 @@ describe('parseEventPage', () => {
     expect(text).toContain('Invaders (FAIZ, Ichii)')
     expect(text).not.toContain('EyeInvaders')
   })
+
+  it('preserves repeated times when they belong to different event sessions', () => {
+    const html = `<main>
+      <h1>Two-city live</h1>
+      <p>大阪</p><p>2027年2月21日(日)</p><p>OPEN 17:00 / START 18:00</p><p>Venue Osaka</p>
+      <p>東京</p><p>2027年2月28日(日)</p><p>OPEN 17:00 / START 18:00</p><p>Venue Tokyo</p>
+    </main>`
+    const text = extractRelevantPageText(html)
+    expect(text.match(/OPEN 17:00 \/ START 18:00/g)).toHaveLength(2)
+  })
 })
