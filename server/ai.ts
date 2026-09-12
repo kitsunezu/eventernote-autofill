@@ -63,21 +63,24 @@ export interface AiImageInput {
   mimeType: string
 }
 
+const retryableOpenAiStatuses = new Set([408, 429, 500, 502, 503, 504])
+
 async function fetchOpenAiResponse(baseUrl: string, apiKey: string, body: unknown, timeoutMs = 90_000): Promise<Response> {
   const url = new URL('responses', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
   const encodedBody = JSON.stringify(body)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: encodedBody,
         signal: AbortSignal.timeout(timeoutMs),
       })
+      if (!retryableOpenAiStatuses.has(response.status) || attempt === 1) return response
     } catch (error) {
       if (!(error instanceof TypeError) || attempt === 1) throw error
-      await new Promise((resolve) => globalThis.setTimeout(resolve, 250))
     }
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 250))
   }
   throw new Error('OpenAI request failed')
 }

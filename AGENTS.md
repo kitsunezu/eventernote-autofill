@@ -78,16 +78,8 @@ Document core architecture, project purpose, and important implementation contex
 <!-- commit-and-push-with-agents:context:start -->
 ### Latest Project Context Signals
 
-- Last scan: `2026-08-08`.
-- Review `server/ai.test.ts` for architecture or project-context updates.
+- Last scan: `2026-09-12`.
 - Review `server/ai.ts` for architecture or project-context updates.
-- Review `server/api-client.test.ts` for architecture or project-context updates.
-- Review `server/eventernote.test.ts` for architecture or project-context updates.
-- Review `server/eventernote.ts` for architecture or project-context updates.
-- Review `server/index.ts` for architecture or project-context updates.
-- Review `server/parser.ts` for architecture or project-context updates.
-- Review `server/submission-readiness.test.ts` for architecture or project-context updates.
-- Review `src/App.tsx` for architecture or project-context updates.
 <!-- commit-and-push-with-agents:context:end -->
 ## Available Features
 
@@ -96,16 +88,8 @@ Document user-facing or agent-facing features here as they are added or changed.
 <!-- commit-and-push-with-agents:features:start -->
 ### Latest Feature Signals
 
-- Last scan: `2026-08-08`.
-- Review `server/ai.test.ts` for user-facing or agent-facing feature updates.
+- Last scan: `2026-09-12`.
 - Review `server/ai.ts` for user-facing or agent-facing feature updates.
-- Review `server/api-client.test.ts` for user-facing or agent-facing feature updates.
-- Review `server/eventernote.test.ts` for user-facing or agent-facing feature updates.
-- Review `server/eventernote.ts` for user-facing or agent-facing feature updates.
-- Review `server/index.ts` for user-facing or agent-facing feature updates.
-- Review `server/parser.ts` for user-facing or agent-facing feature updates.
-- Review `server/submission-readiness.test.ts` for user-facing or agent-facing feature updates.
-- Review `src/App.tsx` for user-facing or agent-facing feature updates.
 <!-- commit-and-push-with-agents:features:end -->
 ## Common Commands
 
@@ -114,7 +98,7 @@ Document build, test, lint, run, and release commands here.
 <!-- commit-and-push-with-agents:commands:start -->
 ### Latest Command Signals
 
-- Last scan: `2026-08-08`.
+- Last scan: `2026-09-12`.
 - No command path signal was detected; verify manually from `git diff`.
 <!-- commit-and-push-with-agents:commands:end -->
 ## Dependencies & Development Environment
@@ -124,7 +108,7 @@ Document dependency managers, runtime versions, setup steps, and development env
 <!-- commit-and-push-with-agents:environment:start -->
 ### Latest Dependency and Environment Signals
 
-- Last scan: `2026-08-08`.
+- Last scan: `2026-09-12`.
 - Dependency files: no direct path signal detected.
 - Development environment files: no direct path signal detected.
 <!-- commit-and-push-with-agents:environment:end -->
@@ -135,7 +119,7 @@ No active agents have been documented yet.
 <!-- commit-and-push-with-agents:active:start -->
 ### Recently Touched Agent Definitions
 
-- Last scan: `2026-08-08`.
+- Last scan: `2026-09-12`.
 - No explicit agent definitions were inferred from the latest change set.
 <!-- commit-and-push-with-agents:active:end -->
 ## Agent Capabilities & Tools
@@ -145,10 +129,27 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
 <!-- commit-and-push-with-agents:capabilities:start -->
 ### Latest Agent-Related Change Signals
 
-- Last scan: `2026-08-08`.
+- Last scan: `2026-09-12`.
 - No prompt, tool, skill, workflow, model, or agent files were detected by path heuristics.
 <!-- commit-and-push-with-agents:capabilities:end -->
 ## Recent Changes
+
+### 2026-09-12 - Recorded repository changes
+
+- Branch: `main`
+- Affected files: 2 detected before updating `AGENTS.md`.
+- Change types: modified: 2.
+- Agent-related files: none detected by path heuristics.
+- Core impact assessment:
+  - Core Architecture: review/update required (`server/ai.ts`).
+  - Available Features: review/update required (`server/ai.ts`).
+  - Common Commands: no direct path signal detected.
+  - Dependencies: no direct path signal detected.
+  - Environment: no direct path signal detected.
+  - Agent System: no direct path signal detected.
+- Files:
+  - `erver/ai.test.ts` (modified)
+  - `server/ai.ts` (modified)
 
 ### 2026-08-08 - Kept uploaded images identical to the preview
 
@@ -283,6 +284,6 @@ Document architecture decisions and integration notes relevant to agents here.
 <!-- commit-and-push-with-agents:architecture:start -->
 ### Latest Change Footprint
 
-- Last scan: `2026-08-08`.
-- Most affected areas: `server` (8), `GENTS.md` (1), `shared` (1), `src` (1).
+- Last scan: `2026-09-12`.
+- Most affected areas: `erver` (1), `server` (1).
 <!-- commit-and-push-with-agents:architecture:end -->

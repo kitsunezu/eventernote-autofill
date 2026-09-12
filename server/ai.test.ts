@@ -182,6 +182,22 @@ describe('enrichWithAi', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('retries one transient gateway response', async () => {
+    const result = aiResult()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'gateway_timeout' } }), { status: 504 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ events: [result] }) }] }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(enrichWithAi(
+      'test-api-key', 'https://api.openai.com/v1', 'gpt-5.6-luna',
+      'https://example.com/event', 'event page', currentEvent(),
+    )).resolves.toBeDefined()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('returns every separately scheduled session', async () => {
     const day = aiResult()
     day.title = scalar('Sample Live 日場', 'high')
