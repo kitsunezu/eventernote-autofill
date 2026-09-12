@@ -148,7 +148,7 @@ Document agent capabilities, tools, prompts, skills, and workflows here.
   - Environment: no direct path signal detected.
   - Agent System: no direct path signal detected.
 - Files:
-  - `erver/ai.test.ts` (modified)
+  - `server/ai.test.ts` (modified)
   - `server/ai.ts` (modified)
 
 ### 2026-08-08 - Kept uploaded images identical to the preview
@@ -285,5 +285,5 @@ Document architecture decisions and integration notes relevant to agents here.
 ### Latest Change Footprint
 
 - Last scan: `2026-09-12`.
-- Most affected areas: `erver` (1), `server` (1).
+- Most affected areas: `server` (2).
 <!-- commit-and-push-with-agents:architecture:end -->
