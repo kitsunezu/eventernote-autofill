@@ -910,10 +910,25 @@ export class EventernoteClient {
     try {
       await this.login()
       stage = 'open_form'
-      const page = await this.fetchWithCookies(new URL(path, this.origin), { signal: AbortSignal.timeout(15_000) })
+      const formUrl = new URL(path, this.origin)
+      const isLoginPage = (response: Response, html: string): boolean => (
+        /^\/login(?:\/|$)/.test(new URL(response.url).pathname)
+        || cheerio.load(html)('form[action*="/login/email"]').length > 0
+      )
+      let page = await this.fetchWithCookies(formUrl, { signal: AbortSignal.timeout(15_000) })
       lastResponse = page
-      if (page.url.includes('/login')) throw new Error('Eventernote session 已失效')
-      const pageHtml = await page.text()
+      let pageHtml = await page.text()
+      if (isLoginPage(page, pageHtml)) {
+        this.loggedIn = false
+        await this.login()
+        page = await this.fetchWithCookies(formUrl, { signal: AbortSignal.timeout(15_000) })
+        lastResponse = page
+        pageHtml = await page.text()
+        if (isLoginPage(page, pageHtml)) {
+          this.loggedIn = false
+          throw new Error('Eventernote session 已失效')
+        }
+      }
       if (!page.ok) {
         const pageText = cheerio.load(pageHtml)('body').text().replace(/\s+/g, ' ').trim()
         if (/メール認証が必要/.test(pageText)) {
@@ -924,7 +939,6 @@ export class EventernoteClient {
         )
       }
       const $ = cheerio.load(pageHtml)
-      if ($('form[action*="/login/email"]').length) throw new Error('Eventernote session 已失效')
       const form = this.submissionForm($, page.url, entityPath)
       if (!form.length) throw new Error(`無法辨識 Eventernote ${entityPath} 新增表單`)
       const body = this.collectDefaults($, form)

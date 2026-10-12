@@ -188,6 +188,77 @@ describe('Eventernote duplicate detection', () => {
     expect(initialBody.get('description')).toBe('')
   })
 
+  it('logs in again when a cached session redirects the event form to login', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    let formReads = 0
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add') && (!init?.method || init.method === 'GET')) {
+        formReads += 1
+        return formReads === 1
+          ? response('<form action="/login/email"></form>', 'https://www.eventernote.com/login')
+          : response('<form action="/events/add" method="post"><input name="event_name"></form>', url)
+      }
+      if (url.endsWith('/events/add') && init?.method === 'POST') {
+        return response('', 'https://www.eventernote.com/events/777')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Sample Live', date: '2026-08-14', openTime: '', startTime: '19:00', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '10', [])).resolves.toEqual({
+      id: '777', url: 'https://www.eventernote.com/events/777',
+    })
+    expect(formReads).toBe(2)
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().endsWith('/login/email'))).toHaveLength(2)
+    expect(fetchMock.mock.calls.filter(([input, init]) => input.toString().endsWith('/events/add') && init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('does not post an event if the form still redirects to login after retry', async () => {
+    const response = (body: string, url: string) => {
+      const result = new Response(body, { status: 200 })
+      Object.defineProperty(result, 'url', { value: url })
+      return result
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString()
+      if (url.endsWith('/login')) {
+        return response('<form action="/login/email"><input name="email"><input name="password"></form>', url)
+      }
+      if (url.endsWith('/login/email')) return response('', 'https://www.eventernote.com/')
+      if (url.endsWith('/events/add')) {
+        return response('<form action="/login/email"></form>', 'https://www.eventernote.com/login')
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const client = new EventernoteClient('https://www.eventernote.com', 'user', 'password')
+    const data = {
+      title: 'Sample Live', date: '2026-08-14', openTime: '', startTime: '19:00', endTime: '',
+      description: '', officialUrl: '', imageUrl: '', descriptionLanguage: 'ja', actors: [],
+      place: { name: 'Example Hall', address: '', countryCode: 'JP', selectedId: '10', createNew: false, candidates: [] },
+    } satisfies EventData
+
+    await expect(client.createEvent(data, '10', [])).rejects.toThrow('Eventernote session 已失效')
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().endsWith('/login/email'))).toHaveLength(2)
+    expect(fetchMock.mock.calls.filter(([input]) => input.toString().endsWith('/events/add'))).toHaveLength(2)
+  })
+
   it('posts the Eventernote confirmation form before accepting the created event', async () => {
     const response = (body: string, url: string, status = 200) => {
       const result = new Response(body, { status })
