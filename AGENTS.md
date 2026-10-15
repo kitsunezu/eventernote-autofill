@@ -20,8 +20,8 @@ Eventernote Autofill turns one public event URL into one or more reviewable Even
 - `server/`: Stateless Node HTTP API for extraction, submission checks, and Eventernote integration. Only active analysis progress is kept in memory.
 - `shared/`: types and utilities used by both browser and server builds.
 - `Dockerfile`: production build and non-root runtime image.
-- `docker-compose.yml`: Portainer stack definition using the published GHCR image.
-- `.github/workflows/docker-publish.yml`: validation, image publication, and authenticated Portainer Git-stack redeploy after pushes to `main`.
+- `docker-compose.yml`: Coolify Compose definition using the published GHCR image.
+- `.github/workflows/docker-publish.yml`: validation, image publication, and Coolify deploy API call after the GitHub OIDC Tailscale connection after pushes to `main`.
 
 The production server serves the built frontend and API from port `8790`. `GET /health` must remain unauthenticated for container and deployment health checks.
 
@@ -46,7 +46,7 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 
 - Prefer existing modules and data types over parallel abstractions.
 - Validate all API inputs with Zod and keep request-size limits explicit.
-- Keep error messages actionable without including credentials, authorization headers, upstream response bodies that may contain private data, or complete Portainer stack payloads.
+- Keep error messages actionable without including credentials, authorization headers, upstream response bodies that may contain private data, or complete deployment payloads.
 - Preserve Eventernote confirmation-form steps and hidden fields, restrict form submissions to the configured Eventernote origin, and log submission failures only as redacted structured metadata.
 - Send Eventernote date parts as decimal integers, preserve two-digit time parts, and normalize flattened confirmation-page times to `HH:MM` before the final POST.
 - Map known Eventernote event fields by their exact parameter names before using any label-context fallback.
@@ -61,11 +61,11 @@ Add focused Vitest coverage for parser, source selection, time inference, networ
 ## Deployment rules
 
 - Production images are `ghcr.io/kitsunezu/eventernote-autofill:latest` plus immutable `sha-*` tags.
-- Portainer owns runtime secrets.
+- Coolify owns runtime secrets.
 - Never commit real values for `APP_TOKEN`, `OPENAI_API_KEY`, `EVENTERNOTE_USERNAME`, `EVENTERNOTE_PASSWORD`, or deployment service tokens.
-- A commit or successful image build is not proof of deployment. Verify the Actions publish job, Portainer stack update/container recreation, and the running container's `/health` response independently.
-- Portainer Git redeploy requests must preserve the stack's existing `Env`; omitting it can clear saved environment variables before Compose interpolation.
-- The redeploy job uses `PORTAINER_API_KEY` plus the Cloudflare Access service-token secrets `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`.
+- A commit or successful image build is not proof of deployment. Verify the GitHub Actions run, Coolify deployment, and the running container's `/health` response independently.
+- Coolify deployment requests reuse its saved Compose environment. Never put values into git.
+- The deploy job uses `TS_OAUTH_CLIENT_ID`, `TS_AUDIENCE`, and the Coolify deploy-only token in `COOLIFY_DEPLOY_TOKEN`.
 
 ## Overview
 
