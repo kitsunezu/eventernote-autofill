@@ -121,7 +121,8 @@ async function readJson(request: IncomingMessage, limit = 1_000_000): Promise<un
 }
 
 function authorized(request: IncomingMessage): boolean {
-  if (!config.appTokenEnabled || !config.appToken) return true
+  if (!config.appTokenEnabled) return true
+  if (!config.appToken) return false
   const supplied = request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? ''
   const expectedBuffer = Buffer.from(config.appToken)
   const suppliedBuffer = Buffer.from(supplied)
@@ -500,12 +501,13 @@ async function serveStatic(pathname: string, response: ServerResponse): Promise<
 async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
   if (request.method === 'GET' && url.pathname === '/health') {
-    json(response, 200, { ok: true })
+    const ok = !config.appTokenEnabled || Boolean(config.appToken)
+    json(response, ok ? 200 : 503, { ok, revision: process.env.BUILD_REVISION ?? 'development' })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/config') {
     json(response, 200, {
-      authRequired: config.appTokenEnabled && Boolean(config.appToken),
+      authRequired: config.appTokenEnabled,
       aiConfigured: Boolean(config.openAiApiKey),
       eventernoteConfigured: Boolean(config.eventernoteUsername && config.eventernotePassword),
       eventernoteWriteEnabled: config.eventernoteWriteEnabled,
