@@ -45,6 +45,21 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Reject stale production commits
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          current_revision="$(curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/git/ref/heads/main" | jq -er '.object.sha')"
+          if [ "$current_revision" != "$EXPECTED_REVISION" ]; then
+            echo "::error::A newer production commit exists; this run must not publish or deploy an older release"
+            exit 1
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -69,13 +84,15 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Connect to Kitsunet over Tailscale
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
@@ -114,3 +131,36 @@ jobs:
             exit 1
           fi
           echo "Coolify accepted deployment request for commit $GITHUB_SHA"
+
+      - name: Verify the deployed release
+        timeout-minutes: 12
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+          RELEASE_URLS: |
+            https://autofill.kitsunezu.com/health
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 600))
+          while (( SECONDS < deadline )); do
+            ready=true
+            while IFS= read -r url; do
+              [ -n "$url" ] || continue
+              if ! curl --fail --silent --show-error --connect-timeout 5 --max-time 10 \
+                --header 'Cache-Control: no-cache' \
+                "$url?revision=$EXPECTED_REVISION&attempt=$SECONDS" \
+                | jq --exit-status --arg revision "$EXPECTED_REVISION" '
+                  .revision == $revision and .ok != false and
+                  .status != "degraded" and .model_loaded != false and .db_connected != false
+                ' >/dev/null 2>&1; then
+                ready=false
+                break
+              fi
+            done <<< "$RELEASE_URLS"
+            if [ "$ready" = true ]; then
+              echo "Public endpoints are healthy and serve revision $EXPECTED_REVISION"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The expected release did not become healthy within 10 minutes"
+          exit 1

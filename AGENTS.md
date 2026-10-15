@@ -20,7 +20,7 @@ Eventernote Autofill turns one public event URL into one or more reviewable Even
 - `server/`: Stateless Node HTTP API for extraction, submission checks, and Eventernote integration. Only active analysis progress is kept in memory.
 - `shared/`: types and utilities used by both browser and server builds.
 - `Dockerfile`: production build and non-root runtime image.
-- `docker-compose.yml`: Coolify Compose definition using the published GHCR image.
+- `docker-compose.yml`: example Compose definition using the published GHCR image. Production uses a separately managed Coolify resource; changing this example does not update its runtime configuration.
 - `.github/workflows/docker-publish.yml`: validation, image publication, and Coolify deploy API call after the GitHub OIDC Tailscale connection after pushes to `main`.
 
 The production server serves the built frontend and API from port `8790`. `GET /health` must remain unauthenticated for container and deployment health checks.
@@ -287,3 +287,9 @@ Document architecture decisions and integration notes relevant to agents here.
 - Last scan: `2026-09-12`.
 - Most affected areas: `server` (2).
 <!-- commit-and-push-with-agents:architecture:end -->
+
+## Deployment verification
+
+- Production builds receive `BUILD_REVISION` from the exact GitHub commit. The workflow polls public release/health endpoints until their revision matches that commit; an old healthy image cannot satisfy deployment success.
+- The live Coolify Compose resource is managed separately from the repository example. App images must use `pull_policy: always`; preserve the existing persistent volumes and runtime environment when editing it.
+- Repository Compose files are examples; runtime changes must be applied deliberately in the existing Coolify resource. CI publishes images and redeploys that saved definition; it does not import example Compose or recreate database volumes.
